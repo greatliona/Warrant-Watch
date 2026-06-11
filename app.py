@@ -618,6 +618,70 @@ def write_saved_items(items: list[dict[str, Any]]) -> None:
     SAVE_PATH.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def normalize_saved_item(item: dict[str, Any]) -> dict[str, Any] | None:
+    code = str(item.get("code") or "").strip().upper()
+    if not code:
+        return None
+    normalized = dict(item)
+    normalized["code"] = code
+    normalized.setdefault("id", str(uuid.uuid4()))
+    normalized.setdefault("error", "")
+    normalized.setdefault("type", "call")
+    normalized.setdefault("quote", {})
+    normalized.setdefault("underlyingQuote", {})
+    normalized.setdefault("testSpot", normalized.get("spot"))
+    normalized.setdefault("targetPrice", normalized.get("marketReference"))
+    normalized.setdefault("updatedAt", int(time.time() * 1000))
+    if to_number(normalized.get("simulatedPrice")) is None:
+        normalized["simulatedPrice"] = option_price(normalized, normalized.get("testSpot"), normalized.get("volatility"))
+    normalized["impliedSpot"] = implied_spot_from_price(normalized, normalized.get("targetPrice"))
+    return normalized
+
+
+def parse_import_items(raw_text: str) -> list[dict[str, Any]]:
+    text = raw_text.strip()
+    if not text:
+        raise ValueError("請貼上舊版 localStorage 內容")
+
+    payload = json.loads(text)
+    if isinstance(payload, str):
+        payload = json.loads(payload)
+    if isinstance(payload, dict):
+        if isinstance(payload.get("warrant-watch-items-v3"), str):
+            payload = json.loads(payload["warrant-watch-items-v3"])
+        elif isinstance(payload.get("items"), list):
+            payload = payload["items"]
+    if not isinstance(payload, list):
+        raise ValueError("匯入內容不是權證清單格式")
+
+    imported: list[dict[str, Any]] = []
+    for item in payload:
+        if isinstance(item, dict):
+            normalized = normalize_saved_item(item)
+            if normalized:
+                imported.append(normalized)
+    if not imported:
+        raise ValueError("沒有讀到任何權證代號")
+    return imported
+
+
+def import_items(raw_text: str, *, replace: bool) -> int:
+    imported = parse_import_items(raw_text)
+    if replace:
+        st.session_state["items"] = imported
+    else:
+        by_code = {item.get("code"): index for index, item in enumerate(st.session_state["items"])}
+        for item in imported:
+            found_index = by_code.get(item["code"])
+            if found_index is None:
+                by_code[item["code"]] = len(st.session_state["items"])
+                st.session_state["items"].append(item)
+            else:
+                st.session_state["items"][found_index] = item
+    persist_current_items()
+    return len(imported)
+
+
 def format_number(value: Any, digits: int = 2) -> str:
     parsed = to_number(value)
     if parsed is None:
@@ -1097,6 +1161,18 @@ def render_sidebar() -> None:
                 refresh_all_prices()
             except Exception as error:
                 st.error(str(error))
+
+        with st.expander("匯入舊版清單"):
+            st.caption('在舊版 Console 執行 copy(localStorage.getItem("warrant-watch-items-v3")) 後貼到這裡。')
+            import_text = st.text_area("舊版 localStorage JSON", height=110, key="legacy_import_text")
+            replace = st.checkbox("用匯入內容取代目前清單", value=False)
+            if st.button("匯入清單", use_container_width=True):
+                try:
+                    count = import_items(import_text, replace=replace)
+                    st.success(f"已匯入 {count} 檔權證")
+                    st.rerun()
+                except Exception as error:
+                    st.error(str(error))
 
 
 def main() -> None:
