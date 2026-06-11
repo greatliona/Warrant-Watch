@@ -1,0 +1,1112 @@
+from __future__ import annotations
+
+import html
+import json
+import math
+import re
+import time
+import uuid
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+from urllib.parse import urlencode
+from zoneinfo import ZoneInfo
+
+import requests
+import streamlit as st
+
+
+APP_DIR = Path(__file__).resolve().parent
+SAVE_PATH = APP_DIR / "saved_warrants.json"
+TAIPEI = ZoneInfo("Asia/Taipei")
+
+TWSE_MIS = "https://mis.twse.com.tw/stock/api/getStockInfo.jsp"
+TWSE_WARRANTS = "https://openapi.twse.com.tw/v1/opendata/t187ap37_L"
+TWSE_SYMBOLS = "https://openapi.twse.com.tw/v1/exchangeReport/TWTB4U"
+TPEX_WARRANTS = "https://www.tpex.org.tw/openapi/v1/mopsfin_t187ap37_O"
+YUANTA_WARRANT_DATA = "https://www.warrantwin.com.tw/eyuanta/ws/GetWarData.ashx"
+YUANTA_QUOTE = "https://www.warrantwin.com.tw/eyuanta/ws/Quote.ashx"
+
+HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit local app"}
+
+
+class WarrantError(Exception):
+    pass
+
+
+def to_number(value: Any) -> float | None:
+    if value is None:
+        return None
+    text = str(value).replace(",", "").strip()
+    if text.endswith("%"):
+        text = text[:-1].strip()
+    if not text or text in {"-", "--"}:
+        return None
+    try:
+        parsed = float(text)
+    except ValueError:
+        return None
+    return parsed if math.isfinite(parsed) else None
+
+
+def roc_date_to_iso(value: Any) -> str:
+    text = re.sub(r"\D", "", str(value or ""))
+    if len(text) != 7:
+        return ""
+    year = int(text[:3]) + 1911
+    return f"{year}-{text[3:5]}-{text[5:7]}"
+
+
+def compact_date_to_iso(value: Any) -> str:
+    text = re.sub(r"\D", "", str(value or ""))
+    if len(text) != 8:
+        return ""
+    return f"{text[:4]}-{text[4:6]}-{text[6:8]}"
+
+
+def iso_to_compact(value: Any) -> str:
+    return re.sub(r"\D", "", str(value or ""))
+
+
+def today_iso() -> str:
+    return datetime.now(TAIPEI).date().isoformat()
+
+
+def split_book(value: Any) -> list[float]:
+    numbers: list[float] = []
+    for item in str(value or "").split("_"):
+        parsed = to_number(item)
+        if parsed is not None:
+            numbers.append(parsed)
+    return numbers
+
+
+def fetch_json(url: str, *, method: str = "GET", data: dict[str, str] | None = None) -> Any:
+    response = requests.request(method, url, headers=HEADERS, data=data, timeout=15)
+    response.raise_for_status()
+    return response.json()
+
+
+def normalize_quote(raw: dict[str, Any], requested_market: str, requested_code: str) -> dict[str, Any] | None:
+    items = raw.get("msgArray") or []
+    item = items[0] if items else None
+    if not item or (not item.get("c") and not item.get("n")):
+        return None
+
+    asks = split_book(item.get("a"))
+    bids = split_book(item.get("b"))
+    last = to_number(item.get("z"))
+    recent = to_number(item.get("pz"))
+    previous_close = to_number(item.get("y"))
+    open_price = to_number(item.get("o"))
+    high = to_number(item.get("h"))
+    low = to_number(item.get("l"))
+    best_ask = asks[0] if asks else None
+    best_bid = bids[0] if bids else None
+    mid = (best_ask + best_bid) / 2 if best_ask is not None and best_bid is not None else None
+    price = first_number(last, recent, mid, best_bid, best_ask, previous_close)
+
+    query_time = raw.get("queryTime") or {}
+    return {
+        "market": item.get("ex") or requested_market,
+        "code": item.get("c") or requested_code,
+        "name": item.get("n") or "",
+        "fullName": item.get("nf") or "",
+        "relatedCode": item.get("rch") or "",
+        "relatedName": item.get("rn") or "",
+        "date": item.get("d") or query_time.get("sysDate") or "",
+        "time": item.get("t") or query_time.get("sysTime") or "",
+        "last": last,
+        "recent": recent,
+        "price": price,
+        "previousClose": previous_close,
+        "open": open_price,
+        "high": high,
+        "low": low,
+        "bestBid": best_bid,
+        "bestAsk": best_ask,
+        "mid": mid,
+        "bidSize": [part for part in str(item.get("g") or "").split("_") if part],
+        "askSize": [part for part in str(item.get("f") or "").split("_") if part],
+        "rawStatus": raw.get("rtmessage") or "",
+    }
+
+
+def first_number(*values: Any) -> float | None:
+    for value in values:
+        parsed = to_number(value)
+        if parsed is not None:
+            return parsed
+    return None
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def fetch_twse_warrants() -> list[dict[str, Any]]:
+    return fetch_json(TWSE_WARRANTS)
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def fetch_tpex_warrants() -> list[dict[str, Any]]:
+    return fetch_json(TPEX_WARRANTS)
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def fetch_twse_symbols() -> list[dict[str, Any]]:
+    return fetch_json(TWSE_SYMBOLS)
+
+
+@st.cache_data(ttl=15, show_spinner=False)
+def fetch_yuanta_warrant(code: str) -> dict[str, Any] | None:
+    columns = [
+        "FLD_WAR_ID",
+        "FLD_WAR_NM",
+        "FLD_WAR_TYPE",
+        "FLD_UND_ID",
+        "FLD_UND_NM",
+        "FLD_OBJ_TXN_PRICE",
+        "FLD_WAR_TXN_PRICE",
+        "FLD_WAR_BUY_PRICE",
+        "FLD_WAR_SELL_PRICE",
+        "FLD_ISSUE_AGT_ID",
+        "FLD_YUANTA_IV",
+        "FLD_DUR_END",
+        "FLD_N_STRIKE_PRC",
+        "FLD_N_UND_CONVER",
+        "FLD_IV_BUY_PRICE",
+        "FLD_IV_SELL_PRICE",
+        "FLD_HISTORY_VOLATILITY_3M",
+        "FLD_RISK_RATE_FREE",
+        "FLD_IV_CLOSE_PRICE",
+        "FLD_OBJ_BUY_PRICE",
+        "FLD_OBJ_2BUY_PRICE",
+        "FLD_OBJ_SELL_PRICE",
+        "FLD_OBJ_2SELL_PRICE",
+    ]
+    payload = {
+        "format": "JSON",
+        "factor": {
+            "columns": columns,
+            "condition": [
+                {"field": "FLD_WAR_ID", "values": [code]},
+                {"field": "FLD_WAR_TYPE", "values": ["1", "2"]},
+            ],
+            "orderby": {"field": "FLD_WAR_TXN_VOLUME", "sort": "DESC", "agtfirst": "980"},
+        },
+        "pagination": {"row": "1", "page": "1", "count": "1"},
+    }
+    headers = {
+        **HEADERS,
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+    }
+    response = requests.post(
+        YUANTA_WARRANT_DATA,
+        headers=headers,
+        data={"data": json.dumps(payload, ensure_ascii=False)},
+        timeout=15,
+    )
+    response.raise_for_status()
+    data = response.json()
+    result = data.get("result") or []
+    return result[0] if result else None
+
+
+@st.cache_data(ttl=15, show_spinner=False)
+def fetch_yuanta_quote_price(params: dict[str, str]) -> float | None:
+    endpoint = f"{YUANTA_QUOTE}?{urlencode(params)}"
+    data = fetch_json(endpoint)
+    return to_number((data.get("calc") or {}).get("PriceTheory"))
+
+
+def choose_volatility(row: dict[str, Any] | None) -> dict[str, Any]:
+    if not row:
+        return {"value": None, "source": ""}
+    yuanta_iv = to_number(row.get("FLD_YUANTA_IV"))
+    if row.get("FLD_ISSUE_AGT_ID") == "980" and yuanta_iv and yuanta_iv > 0:
+        return {"value": yuanta_iv, "source": "元大造市委買波動率"}
+
+    candidates = [
+        ("買價隱波", row.get("FLD_IV_BUY_PRICE")),
+        ("賣價隱波", row.get("FLD_IV_SELL_PRICE")),
+        ("收盤隱波", row.get("FLD_IV_CLOSE_PRICE")),
+        ("三個月歷史波動率", row.get("FLD_HISTORY_VOLATILITY_3M")),
+    ]
+    for source, raw_value in candidates:
+        value = to_number(raw_value)
+        if value and value > 0:
+            return {"value": value, "source": source}
+    return {"value": None, "source": ""}
+
+
+def yuanta_type_is_put(row: dict[str, Any] | None) -> bool:
+    if not row:
+        return False
+    return str(row.get("FLD_WAR_TYPE") or "") in {"認售", "2", "PUT", "put"}
+
+
+def choose_underlying_price(row: dict[str, Any] | None) -> float | None:
+    if not row:
+        return None
+    if yuanta_type_is_put(row):
+        primary = row.get("FLD_OBJ_SELL_PRICE")
+        secondary = row.get("FLD_OBJ_2SELL_PRICE")
+    else:
+        primary = row.get("FLD_OBJ_BUY_PRICE")
+        secondary = row.get("FLD_OBJ_2BUY_PRICE")
+    return first_number(primary, secondary, row.get("FLD_OBJ_TXN_PRICE"))
+
+
+def find_underlying(name_or_code: str) -> dict[str, Any] | None:
+    if not name_or_code:
+        return None
+    symbols = fetch_twse_symbols()
+    key = str(name_or_code).strip()
+    compact_key = key.replace(" ", "")
+    for item in symbols:
+        if item.get("Code") == key:
+            return item
+    for item in symbols:
+        if item.get("Name") == key:
+            return item
+    for item in symbols:
+        if str(item.get("Name") or "").replace(" ", "") == compact_key:
+            return item
+    return None
+
+
+def find_warrant_info(code: str) -> dict[str, Any] | None:
+    code = code.strip().upper()
+    row = next((item for item in fetch_twse_warrants() if str(item.get("權證代號") or "").upper() == code), None)
+    market = "tse"
+
+    if not row:
+        row = next((item for item in fetch_tpex_warrants() if str(item.get("權證代號") or "").upper() == code), None)
+        market = "otc" if row else "tse"
+
+    if not row:
+        return None
+
+    underlying_label = row.get("標的證券/指數") or ""
+    underlying = find_underlying(underlying_label) if market == "tse" else None
+    shares_per_thousand = to_number(row.get("最新標的履約配發數量(每仟單位權證)"))
+    ratio = shares_per_thousand / 1000 if shares_per_thousand is not None else None
+
+    return {
+        "code": row.get("權證代號") or code,
+        "name": row.get("權證簡稱") or "",
+        "warrantType": "put" if row.get("權證類型") == "認售" else "call",
+        "category": row.get("類別") or "",
+        "quoteStyle": row.get("流動量提供者報價方式") or "",
+        "settlement": row.get("結算方式(詳附註編號說明)") or "",
+        "underlyingName": underlying_label,
+        "underlyingCode": (underlying or {}).get("Code") or "",
+        "underlyingMarket": "tse" if underlying else market,
+        "warrantMarket": market,
+        "strike": to_number(row.get("最新履約價格(元)/履約指數")),
+        "ratio": ratio,
+        "sharesPerThousand": shares_per_thousand,
+        "startDate": roc_date_to_iso(row.get("履約開始日")),
+        "lastTradingDate": roc_date_to_iso(row.get("最後交易日")),
+        "exerciseEndDate": roc_date_to_iso(row.get("履約截止日")),
+        "sourceDate": roc_date_to_iso(row.get("出表日期")),
+    }
+
+
+def apply_yuanta_overrides(info: dict[str, Any], yuanta: dict[str, Any] | None) -> None:
+    if not yuanta:
+        return
+    info["name"] = yuanta.get("FLD_WAR_NM") or info.get("name") or ""
+    if yuanta_type_is_put(yuanta):
+        info["warrantType"] = "put"
+    elif str(yuanta.get("FLD_WAR_TYPE") or "") in {"認購", "1", "CALL", "call"}:
+        info["warrantType"] = "call"
+    info["underlyingCode"] = yuanta.get("FLD_UND_ID") or info.get("underlyingCode") or ""
+    info["underlyingName"] = yuanta.get("FLD_UND_NM") or info.get("underlyingName") or ""
+    info["strike"] = first_number(yuanta.get("FLD_N_STRIKE_PRC"), info.get("strike"))
+    info["ratio"] = first_number(yuanta.get("FLD_N_UND_CONVER"), info.get("ratio"))
+    info["exerciseEndDate"] = compact_date_to_iso(yuanta.get("FLD_DUR_END")) or info.get("exerciseEndDate") or ""
+
+
+def fetch_quote(market: str, code: str) -> dict[str, Any] | None:
+    params = {
+        "ex_ch": f"{market}_{code}.tw",
+        "json": "1",
+        "delay": "0",
+        "_": str(int(time.time() * 1000)),
+    }
+    endpoint = f"{TWSE_MIS}?{urlencode(params)}"
+    return normalize_quote(fetch_json(endpoint), market, code)
+
+
+def fetch_quote_with_fallback(code: str, preferred_market: str) -> dict[str, Any] | None:
+    markets = ["tse", "otc"] if preferred_market == "tse" else ["otc", "tse"]
+    for market in markets:
+        try:
+            quote = fetch_quote(market, code)
+        except Exception:
+            quote = None
+        if quote:
+            return quote
+    return None
+
+
+def fetch_yuanta_fair_price(info: dict[str, Any], yuanta: dict[str, Any] | None, spot: Any) -> float | None:
+    volatility = choose_volatility(yuanta)
+    spot_value = to_number(spot)
+    vol_value = to_number(volatility.get("value"))
+    if not yuanta or not spot_value or not vol_value:
+        return None
+
+    expiry = (
+        compact_date_to_iso(yuanta.get("FLD_DUR_END"))
+        or info.get("exerciseEndDate")
+        or info.get("lastTradingDate")
+        or ""
+    )
+    params = {
+        "type": "calc",
+        "symbol": str(info.get("code") or ""),
+        "war_type": "2" if info.get("warrantType") == "put" else "1",
+        "conver_rate": str(first_number(yuanta.get("FLD_N_UND_CONVER"), info.get("ratio")) or ""),
+        "udly_price": str(spot_value),
+        "bid_price": str(first_number(yuanta.get("FLD_WAR_BUY_PRICE")) or ""),
+        "ask_price": str(first_number(yuanta.get("FLD_WAR_SELL_PRICE")) or ""),
+        "strike_price": str(first_number(yuanta.get("FLD_N_STRIKE_PRC"), info.get("strike")) or ""),
+        "hist_vol": str((first_number(yuanta.get("FLD_HISTORY_VOLATILITY_3M"), vol_value) or vol_value) / 100),
+        "date_s": iso_to_compact(today_iso()),
+        "date_e": iso_to_compact(expiry),
+        "ir": str((first_number(yuanta.get("FLD_RISK_RATE_FREE"), 1.5) or 1.5) / 100),
+        "iv": str(vol_value / 100),
+    }
+    return fetch_yuanta_quote_price(params)
+
+
+def quote_reference(quote: dict[str, Any] | None) -> float | None:
+    if not quote:
+        return None
+    return first_number(
+        quote.get("mid"),
+        quote.get("recent"),
+        quote.get("last"),
+        quote.get("bestBid"),
+        quote.get("bestAsk"),
+        quote.get("price"),
+        quote.get("previousClose"),
+    )
+
+
+def normal_cdf(x: float) -> float:
+    sign = -1 if x < 0 else 1
+    a1 = 0.254829592
+    a2 = -0.284496736
+    a3 = 1.421413741
+    a4 = -1.453152027
+    a5 = 1.061405429
+    p = 0.3275911
+    absolute = abs(x)
+    t = 1 / (1 + p * absolute)
+    erf = sign * (1 - (((((a5 * t + a4) * t + a3) * t + a2) * t + a1) * t * math.exp(-absolute * absolute)))
+    return 0.5 * (1 + erf)
+
+
+def days_to_expiry(expiry: str) -> int:
+    if not expiry:
+        return 0
+    try:
+        end = datetime.fromisoformat(f"{expiry}T13:30:00+08:00")
+    except ValueError:
+        return 0
+    now = datetime.now(TAIPEI)
+    return max(0, math.ceil((end - now).total_seconds() / 86400))
+
+
+def years_to_expiry(expiry: str) -> float:
+    return max(days_to_expiry(expiry) / 365, 1 / 365)
+
+
+def option_price(item: dict[str, Any], spot: Any, volatility: Any) -> float | None:
+    s = to_number(spot)
+    k = to_number(item.get("strike"))
+    ratio = to_number(item.get("ratio"))
+    sigma = max(0.0001, min(5, to_number(volatility) or 0.45))
+    r = to_number(item.get("riskFreeRate")) or 0.015
+    q = 0
+    expiry = item.get("expiry") or item.get("exerciseEndDate") or ""
+    t = years_to_expiry(expiry)
+
+    if not s or not k or not ratio or s <= 0 or k <= 0 or ratio <= 0:
+        return None
+
+    sqrt_t = math.sqrt(t)
+    d1 = (math.log(s / k) + (r - q + 0.5 * sigma * sigma) * t) / (sigma * sqrt_t)
+    d2 = d1 - sigma * sqrt_t
+    discount_q = math.exp(-q * t)
+    discount_r = math.exp(-r * t)
+    is_call = item.get("type") != "put"
+    if is_call:
+        raw_price = s * discount_q * normal_cdf(d1) - k * discount_r * normal_cdf(d2)
+    else:
+        raw_price = k * discount_r * normal_cdf(-d2) - s * discount_q * normal_cdf(-d1)
+    return max(0, raw_price * ratio)
+
+
+def implied_spot_from_price(item: dict[str, Any], target_price: Any) -> float | None:
+    target = to_number(target_price)
+    strike = to_number(item.get("strike"))
+    spot = first_number(item.get("spot"), strike)
+    if target is None or target < 0 or not strike or not spot:
+        return None
+
+    is_put = item.get("type") == "put"
+    low = 0.01
+    high = max(strike, spot, 1) * 2
+
+    def price_at(value: float) -> float:
+        return option_price(item, value, item.get("volatility")) or 0
+
+    if is_put:
+        while price_at(low) < target and low > 0.000001:
+            low /= 2
+        while price_at(high) > target and high < strike * 20:
+            high *= 2
+        if price_at(low) < target or price_at(high) > target:
+            return None
+        for _ in range(64):
+            mid = (low + high) / 2
+            if price_at(mid) > target:
+                low = mid
+            else:
+                high = mid
+        return (low + high) / 2
+
+    while price_at(high) < target and high < strike * 20:
+        high *= 2
+    if price_at(low) > target or price_at(high) < target:
+        return None
+    for _ in range(64):
+        mid = (low + high) / 2
+        if price_at(mid) < target:
+            low = mid
+        else:
+            high = mid
+    return (low + high) / 2
+
+
+def load_warrant(code: str, existing: dict[str, Any] | None = None) -> dict[str, Any]:
+    normalized = str(code or "").strip().upper()
+    if not re.fullmatch(r"[0-9A-Z]+", normalized):
+        raise WarrantError("請輸入有效權證代號")
+
+    info = find_warrant_info(normalized)
+    if not info:
+        raise WarrantError("查無權證基本資料，請確認代號或稍後再試")
+
+    try:
+        yuanta = fetch_yuanta_warrant(normalized)
+    except Exception:
+        yuanta = None
+    apply_yuanta_overrides(info, yuanta)
+    volatility = choose_volatility(yuanta)
+
+    quote = fetch_quote(info.get("warrantMarket") or "tse", info.get("code") or normalized)
+    if not quote:
+        raise WarrantError("查無權證即時報價")
+
+    info["underlyingCode"] = info.get("underlyingCode") or quote.get("relatedCode") or ""
+    info["underlyingName"] = info.get("underlyingName") or quote.get("relatedName") or ""
+
+    underlying_quote = None
+    if info.get("underlyingCode"):
+        underlying_quote = fetch_quote_with_fallback(
+            info["underlyingCode"],
+            info.get("underlyingMarket") or info.get("warrantMarket") or "tse",
+        )
+    if not underlying_quote:
+        raise WarrantError("查無標的即時報價")
+
+    info["underlyingMarket"] = underlying_quote.get("market") or info.get("underlyingMarket")
+    info["underlyingName"] = info.get("underlyingName") or underlying_quote.get("name") or ""
+
+    underlying_price = first_number(choose_underlying_price(yuanta), quote_reference(underlying_quote))
+    pricing = {
+        "evaluationDate": today_iso(),
+        "underlyingPrice": underlying_price,
+        "volatility": volatility.get("value"),
+        "volatilitySource": volatility.get("source"),
+        "riskFreeRate": first_number((yuanta or {}).get("FLD_RISK_RATE_FREE"), 1.5),
+        "historyVolatility": to_number((yuanta or {}).get("FLD_HISTORY_VOLATILITY_3M")),
+        "expiryDate": info.get("exerciseEndDate") or info.get("lastTradingDate") or "",
+    }
+    try:
+        fair_from_yuanta = fetch_yuanta_fair_price(info, yuanta, underlying_price)
+    except Exception:
+        fair_from_yuanta = None
+
+    market_reference = quote_reference(quote)
+    spot = first_number(pricing["underlyingPrice"], quote_reference(underlying_quote))
+    item = {
+        "id": (existing or {}).get("id") or str(uuid.uuid4()),
+        "code": info.get("code") or normalized,
+        "name": info.get("name") or "",
+        "type": info.get("warrantType") or "call",
+        "expiry": pricing["expiryDate"],
+        "strike": info.get("strike"),
+        "ratio": info.get("ratio"),
+        "underlyingCode": info.get("underlyingCode") or "",
+        "underlyingName": info.get("underlyingName") or "",
+        "quote": quote,
+        "underlyingQuote": underlying_quote,
+        "spot": spot,
+        "marketReference": market_reference,
+        "volatility": (first_number(pricing["volatility"], 45) or 45) / 100,
+        "volatilitySource": pricing.get("volatilitySource") or "波動率",
+        "riskFreeRate": (first_number(pricing["riskFreeRate"], 1.5) or 1.5) / 100,
+        "evaluationDate": pricing.get("evaluationDate") or "",
+        "testSpot": (existing or {}).get("testSpot", spot),
+        "targetPrice": (existing or {}).get("targetPrice", market_reference),
+        "updatedAt": int(time.time() * 1000),
+        "error": "",
+    }
+    fallback_fair = option_price(item, spot, item["volatility"])
+    item["fairPrice"] = fair_from_yuanta if fair_from_yuanta is not None else fallback_fair
+
+    if to_number(item["testSpot"]) == to_number(spot):
+        item["simulatedPrice"] = item["fairPrice"]
+    else:
+        item["simulatedPrice"] = fair_price_for_spot(item, item["testSpot"])
+    item["impliedSpot"] = implied_spot_from_price(item, item["targetPrice"])
+    return item
+
+
+def fair_price_for_spot(item: dict[str, Any], spot: Any) -> float | None:
+    spot_value = to_number(spot)
+    if spot_value is None:
+        return None
+    try:
+        info = find_warrant_info(item.get("code") or "")
+        yuanta = fetch_yuanta_warrant(item.get("code") or "")
+        if info:
+            apply_yuanta_overrides(info, yuanta)
+            fair = fetch_yuanta_fair_price(info, yuanta, spot_value)
+            if fair is not None:
+                return fair
+    except Exception:
+        pass
+    return option_price(item, spot_value, item.get("volatility"))
+
+
+def read_saved_items() -> list[dict[str, Any]]:
+    if not SAVE_PATH.exists():
+        return []
+    try:
+        payload = json.loads(SAVE_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    if isinstance(payload, list):
+        items = payload
+    else:
+        items = payload.get("items") or []
+    valid_items: list[dict[str, Any]] = []
+    for item in items:
+        if isinstance(item, dict) and item.get("code"):
+            item.setdefault("id", str(uuid.uuid4()))
+            item.setdefault("error", "")
+            valid_items.append(item)
+    return valid_items
+
+
+def write_saved_items(items: list[dict[str, Any]]) -> None:
+    SAVE_PATH.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def format_number(value: Any, digits: int = 2) -> str:
+    parsed = to_number(value)
+    if parsed is None:
+        return "--"
+    return f"{parsed:,.{digits}f}"
+
+
+def format_input_number(value: Any, digits: int = 2) -> str:
+    parsed = to_number(value)
+    if parsed is None:
+        return ""
+    return f"{parsed:.{digits}f}"
+
+
+def type_text(value: str) -> str:
+    return "認售" if value == "put" else "認購"
+
+
+def time_ago(timestamp: Any) -> str:
+    parsed = to_number(timestamp)
+    if parsed is None:
+        return "未更新"
+    seconds = max(0, int((time.time() * 1000 - parsed) / 1000))
+    if seconds < 60:
+        return f"{seconds} 秒前"
+    minutes = seconds // 60
+    if minutes < 60:
+        return f"{minutes} 分前"
+    return f"{minutes // 60} 小時前"
+
+
+def safe_key(value: str) -> str:
+    return re.sub(r"[^0-9A-Za-z_]", "_", value)
+
+
+def metric_html(label: str, value: Any, *, accent: bool = False) -> str:
+    cls = "metric-value accent" if accent else "metric-value"
+    return (
+        '<div class="metric-box">'
+        f'<span class="metric-label">{html.escape(label)}</span>'
+        f'<strong class="{cls}">{html.escape(format_number(value))}</strong>'
+        "</div>"
+    )
+
+
+def detail_line(label: str, value: str) -> None:
+    st.markdown(
+        f'<div class="detail-line"><span>{html.escape(label)}</span><strong>{html.escape(value or "--")}</strong></div>',
+        unsafe_allow_html=True,
+    )
+
+
+def persist_current_items() -> None:
+    write_saved_items(st.session_state["items"])
+
+
+def add_or_update_warrant(code: str) -> None:
+    normalized = str(code or "").strip().upper()
+    if not normalized:
+        st.warning("請先輸入權證代號")
+        return
+    existing_index = next((i for i, item in enumerate(st.session_state["items"]) if item.get("code") == normalized), -1)
+    existing = st.session_state["items"][existing_index] if existing_index >= 0 else None
+    with st.spinner("正在抓取權證資料..."):
+        item = load_warrant(normalized, existing)
+    if existing_index >= 0:
+        st.session_state["items"][existing_index] = item
+    else:
+        st.session_state["items"].append(item)
+    persist_current_items()
+    st.toast(f"{item['code']} 已儲存")
+
+
+def refresh_all_prices() -> None:
+    if not st.session_state["items"]:
+        return
+    st.cache_data.clear()
+    refreshed: list[dict[str, Any]] = []
+    failed = 0
+    progress = st.progress(0, text="更新價格中...")
+    for index, item in enumerate(st.session_state["items"]):
+        try:
+            refreshed.append(load_warrant(item.get("code") or "", item))
+        except Exception as error:
+            failed += 1
+            item["error"] = str(error)
+            refreshed.append(item)
+        progress.progress((index + 1) / len(st.session_state["items"]), text="更新價格中...")
+    progress.empty()
+    st.session_state["items"] = refreshed
+    persist_current_items()
+    st.toast(f"已更新，{failed} 檔暫時抓不到" if failed else "價格已更新")
+
+
+def move_item(index: int, direction: int) -> None:
+    next_index = index + direction
+    if next_index < 0 or next_index >= len(st.session_state["items"]):
+        return
+    item = st.session_state["items"].pop(index)
+    st.session_state["items"].insert(next_index, item)
+    persist_current_items()
+    st.rerun()
+
+
+def delete_item(index: int) -> None:
+    removed = st.session_state["items"].pop(index)
+    persist_current_items()
+    st.toast(f"{removed.get('code')} 已刪除")
+    st.rerun()
+
+
+def inject_css() -> None:
+    st.markdown(
+        """
+        <style>
+        :root {
+          --bg: #f4f6f8;
+          --surface: #ffffff;
+          --ink: #17211d;
+          --muted: #62706a;
+          --line: #d8e0dc;
+          --accent: #147a63;
+          --accent-strong: #0d5d49;
+          --danger: #b42318;
+          --blue-soft: #eef7ff;
+          --blue-line: #b9dcff;
+          --orange-soft: #fff5e8;
+          --orange-line: #f2c790;
+        }
+        .stApp { background: var(--bg); color: var(--ink); }
+        header[data-testid="stHeader"] {
+          background: transparent;
+        }
+        div[data-testid="stToolbar"] {
+          display: none;
+        }
+        .main .block-container {
+          max-width: none;
+          padding: 0.75rem 1.1rem 1.4rem;
+        }
+        section[data-testid="stSidebar"] {
+          background: #ffffff;
+          border-right: 1px solid var(--line);
+        }
+        section[data-testid="stSidebar"],
+        section[data-testid="stSidebar"] * {
+          color: var(--ink);
+        }
+        section[data-testid="stSidebar"] h1 {
+          font-size: 1.55rem;
+          line-height: 1.1;
+          margin-bottom: 0.25rem;
+        }
+        section[data-testid="stSidebar"] [data-testid="stCaptionContainer"],
+        section[data-testid="stSidebar"] label,
+        section[data-testid="stSidebar"] [data-testid="stMetricLabel"] {
+          color: var(--muted);
+        }
+        div[data-testid="stTextInput"] input,
+        div[data-testid="stNumberInput"] input {
+          background: #ffffff !important;
+          color: var(--ink) !important;
+          border: 1px solid var(--line) !important;
+          border-radius: 8px !important;
+        }
+        .stButton > button,
+        button[data-testid="stBaseButton-secondary"],
+        button[data-testid="stBaseButton-secondaryFormSubmit"],
+        button[data-testid="stPopoverButton"] {
+          background: #ffffff;
+          color: var(--ink);
+          border: 1px solid var(--line);
+          min-height: 2rem;
+          border-radius: 8px;
+          font-weight: 800;
+        }
+        button[data-testid="stBaseButton-secondaryFormSubmit"] {
+          background: var(--accent);
+          color: #ffffff;
+          border-color: var(--accent);
+        }
+        .stButton > button:hover,
+        button[data-testid="stBaseButton-secondary"]:hover,
+        button[data-testid="stBaseButton-secondaryFormSubmit"]:hover,
+        button[data-testid="stPopoverButton"]:hover {
+          border-color: #9fb0a9;
+        }
+        .stButton > button:disabled,
+        button[data-testid="stBaseButton-secondary"]:disabled,
+        button[data-testid="stBaseButton-secondaryFormSubmit"]:disabled {
+          background: #eef2ef;
+          color: #82918b;
+          border-color: var(--line);
+        }
+        button[data-testid="stPopoverButton"] {
+          width: 2rem;
+          min-width: 2rem;
+          height: 2rem;
+          padding: 0 !important;
+          color: var(--accent-strong);
+          line-height: 1;
+        }
+        button[data-testid="stPopoverButton"] > div {
+          justify-content: center;
+          gap: 0;
+        }
+        button[data-testid="stPopoverButton"] p {
+          margin: 0;
+          font-size: 1rem;
+          line-height: 1;
+        }
+        button[data-testid="stPopoverButton"] span[data-testid="stIconMaterial"] {
+          display: none;
+        }
+        div[data-testid="stPopoverBody"] {
+          background: #ffffff !important;
+          color: var(--ink) !important;
+          border: 1px solid var(--line) !important;
+          border-radius: 8px !important;
+          box-shadow: 0 16px 36px rgba(18, 31, 27, 0.14) !important;
+        }
+        div[data-testid="stPopoverBody"] * {
+          color: var(--ink) !important;
+        }
+        div[data-testid="stPopoverBody"] .detail-line span {
+          color: var(--muted) !important;
+        }
+        div[data-testid="stVerticalBlock"] { gap: 0.45rem; }
+        div[data-testid="stHorizontalBlock"] { gap: 0.5rem; }
+        div[class*="st-key-card_"] {
+          background: #fbfcfb;
+          border-radius: 8px;
+        }
+        div[class*="st-key-calc_forward_"],
+        div[class*="st-key-calc_reverse_"] {
+          border-radius: 8px;
+          padding: 0.28rem 0.45rem 0.22rem;
+          border: 1px solid;
+        }
+        div[class*="st-key-calc_forward_"] {
+          background: var(--blue-soft);
+          border-color: var(--blue-line);
+        }
+        div[class*="st-key-calc_reverse_"] {
+          background: var(--orange-soft);
+          border-color: var(--orange-line);
+        }
+        div[class*="st-key-calc_forward_"] label,
+        div[class*="st-key-calc_reverse_"] label {
+          font-size: 0.72rem;
+          font-weight: 800;
+          color: var(--muted);
+        }
+        div[data-testid="stNumberInput"] input,
+        div[data-testid="stTextInput"] input {
+          min-height: 1.8rem;
+          padding-top: 0.15rem;
+          padding-bottom: 0.15rem;
+        }
+        .warrant-title {
+          min-width: 0;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          font-size: 0.91rem;
+          line-height: 1.25;
+          font-weight: 850;
+        }
+        .metric-box { min-width: 0; }
+        .metric-label {
+          display: block;
+          color: var(--muted);
+          font-size: 0.68rem;
+          line-height: 1;
+          font-weight: 850;
+          white-space: nowrap;
+        }
+        .metric-value {
+          display: block;
+          color: #42504a;
+          font-size: 1rem;
+          line-height: 1.08;
+          margin-top: 0.12rem;
+          white-space: nowrap;
+          font-weight: 850;
+        }
+        .metric-value.accent { color: var(--accent-strong); }
+        .calc-output {
+          text-align: right;
+          padding-top: 0.15rem;
+        }
+        .calc-output .metric-value { font-size: 1.04rem; }
+        .detail-line {
+          display: grid;
+          grid-template-columns: 5.5rem minmax(0, 1fr);
+          gap: 0.5rem;
+          border-bottom: 1px solid #eef2ef;
+          padding: 0.18rem 0;
+          font-size: 0.82rem;
+        }
+        .detail-line span {
+          color: var(--muted);
+          font-weight: 750;
+        }
+        .detail-line strong {
+          color: var(--ink);
+          font-weight: 760;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .small-note {
+          color: var(--muted);
+          font-size: 0.8rem;
+          line-height: 1.2;
+        }
+        .empty-state {
+          border: 1px dashed var(--line);
+          border-radius: 8px;
+          background: #ffffff;
+          padding: 1.8rem;
+          color: var(--muted);
+          text-align: center;
+        }
+        @media (max-width: 900px) {
+          .main .block-container { padding-left: 0.75rem; padding-right: 0.75rem; }
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_warrant_card(item: dict[str, Any], index: int) -> None:
+    card_id = safe_key(item.get("id") or item.get("code") or str(index))
+    with st.container(border=True, key=f"card_{card_id}"):
+        top = st.columns([2.6, 0.82, 0.72, 0.98], gap="small")
+        with top[0]:
+            title_cols = st.columns([0.86, 0.14], gap="small")
+            title = f"{item.get('code') or ''} {item.get('name') or ''}".strip()
+            title_cols[0].markdown(
+                f'<div class="warrant-title" title="{html.escape(title)}">{html.escape(title)}</div>',
+                unsafe_allow_html=True,
+            )
+            with title_cols[1]:
+                if hasattr(st, "popover"):
+                    with st.popover("☆"):
+                        render_details(item)
+                else:
+                    with st.expander("☆"):
+                        render_details(item)
+        top[1].markdown(metric_html("合理價", item.get("fairPrice"), accent=True), unsafe_allow_html=True)
+        top[2].markdown(metric_html("報價", item.get("marketReference")), unsafe_allow_html=True)
+        top[3].markdown(metric_html("現貨股價", item.get("spot")), unsafe_allow_html=True)
+
+        calc_cols = st.columns(2, gap="small")
+        with calc_cols[0]:
+            with st.container(key=f"calc_forward_{card_id}"):
+                inner = st.columns([1.05, 0.95], gap="small")
+                spot_key = f"spot_text_{card_id}"
+                if spot_key not in st.session_state:
+                    st.session_state[spot_key] = format_input_number(item.get("testSpot", item.get("spot")))
+                with inner[0]:
+                    test_spot_raw = st.text_input(
+                        "股價",
+                        key=spot_key,
+                    )
+                test_spot = to_number(test_spot_raw)
+                simulated = item.get("fairPrice") if to_number(test_spot) == to_number(item.get("spot")) else fair_price_for_spot(item, test_spot)
+                item["testSpot"] = test_spot
+                item["simulatedPrice"] = simulated
+                with inner[1]:
+                    st.markdown(
+                        '<div class="calc-output">'
+                        + metric_html("權證價格", simulated, accent=True)
+                        + "</div>",
+                        unsafe_allow_html=True,
+                    )
+
+        with calc_cols[1]:
+            with st.container(key=f"calc_reverse_{card_id}"):
+                inner = st.columns([1.05, 0.95], gap="small")
+                target_key = f"target_text_{card_id}"
+                if target_key not in st.session_state:
+                    st.session_state[target_key] = format_input_number(item.get("targetPrice", item.get("marketReference")))
+                with inner[0]:
+                    target_price_raw = st.text_input(
+                        "權證價格",
+                        key=target_key,
+                    )
+                target_price = to_number(target_price_raw)
+                implied = implied_spot_from_price(item, target_price)
+                item["targetPrice"] = target_price
+                item["impliedSpot"] = implied
+                with inner[1]:
+                    st.markdown(
+                        '<div class="calc-output">'
+                        + metric_html("股價", implied, accent=True)
+                        + "</div>",
+                        unsafe_allow_html=True,
+                    )
+
+        actions = st.columns([0.18, 0.18, 0.2, 1.0], gap="small")
+        if actions[0].button("▲", key=f"up_{card_id}", disabled=index == 0, help="上移"):
+            move_item(index, -1)
+        if actions[1].button("▼", key=f"down_{card_id}", disabled=index == len(st.session_state["items"]) - 1, help="下移"):
+            move_item(index, 1)
+        if actions[2].button("×", key=f"delete_{card_id}", help="刪除這檔權證"):
+            delete_item(index)
+        if item.get("error"):
+            actions[3].warning(item["error"])
+        else:
+            actions[3].markdown(
+                f'<div class="small-note">更新 {html.escape(time_ago(item.get("updatedAt")))}</div>',
+                unsafe_allow_html=True,
+            )
+    persist_current_items()
+
+
+def render_details(item: dict[str, Any]) -> None:
+    quote = item.get("quote") or {}
+    underlying_quote = item.get("underlyingQuote") or {}
+    detail_line("類型", type_text(item.get("type") or "call"))
+    detail_line("標的", f"{item.get('underlyingCode') or ''} {item.get('underlyingName') or ''}".strip())
+    detail_line("履約價", format_number(item.get("strike")))
+    detail_line("換股比例", format_number(item.get("ratio"), 4))
+    detail_line("到期日", item.get("expiry") or "--")
+    detail_line("評價日", item.get("evaluationDate") or "--")
+    detail_line("波動率", f"{item.get('volatilitySource') or '波動率'} {format_number((to_number(item.get('volatility')) or 0) * 100)}%")
+    detail_line("利率", f"{format_number((to_number(item.get('riskFreeRate')) or 0) * 100)}%")
+    detail_line("委買/委賣", f"{format_number(quote.get('bestBid'))} / {format_number(quote.get('bestAsk'))}")
+    detail_line("標的市場", f"{underlying_quote.get('market') or '--'}")
+
+
+def render_main() -> None:
+    if not st.session_state["items"]:
+        st.markdown(
+            '<div class="empty-state"><strong>還沒有儲存任何權證</strong><br>從左側輸入代號後，系統會自動抓資料。</div>',
+            unsafe_allow_html=True,
+        )
+        return
+
+    latest = max((to_number(item.get("updatedAt")) or 0 for item in st.session_state["items"]), default=0)
+    st.markdown(
+        f'<div class="small-note">最近更新 {html.escape(time_ago(latest))}</div>',
+        unsafe_allow_html=True,
+    )
+
+    for row_start in range(0, len(st.session_state["items"]), 2):
+        cols = st.columns(2, gap="small")
+        for offset, col in enumerate(cols):
+            item_index = row_start + offset
+            if item_index >= len(st.session_state["items"]):
+                continue
+            with col:
+                render_warrant_card(st.session_state["items"][item_index], item_index)
+
+
+def render_sidebar() -> None:
+    with st.sidebar:
+        st.markdown("### Warrant Watch")
+        st.title("權證合理價")
+        st.caption(f"評價日固定使用今天：{today_iso()}")
+
+        with st.form("add_warrant_form", clear_on_submit=True):
+            code = st.text_input("權證代號", placeholder="例如 030012").strip().upper()
+            submitted = st.form_submit_button("新增並抓資料", use_container_width=True)
+        if submitted:
+            try:
+                add_or_update_warrant(code)
+            except Exception as error:
+                st.error(str(error))
+
+        st.metric("已儲存", len(st.session_state["items"]))
+        if st.button("更新價格", use_container_width=True, disabled=not st.session_state["items"]):
+            try:
+                refresh_all_prices()
+            except Exception as error:
+                st.error(str(error))
+
+
+def main() -> None:
+    st.set_page_config(page_title="權證合理價", layout="wide", initial_sidebar_state="expanded")
+    inject_css()
+    if "items" not in st.session_state:
+        st.session_state["items"] = read_saved_items()
+    render_sidebar()
+    render_main()
+
+
+if __name__ == "__main__":
+    main()
