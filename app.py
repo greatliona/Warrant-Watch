@@ -696,6 +696,14 @@ def format_input_number(value: Any, digits: int = 2) -> str:
     return f"{parsed:.{digits}f}"
 
 
+def numbers_equal(left: Any, right: Any, *, tolerance: float = 1e-9) -> bool:
+    left_number = to_number(left)
+    right_number = to_number(right)
+    if left_number is None or right_number is None:
+        return left_number is right_number
+    return abs(left_number - right_number) <= tolerance
+
+
 def type_text(value: str) -> str:
     return "認售" if value == "put" else "認購"
 
@@ -731,6 +739,39 @@ def detail_line(label: str, value: str) -> None:
     st.markdown(
         f'<div class="detail-line"><span>{html.escape(label)}</span><strong>{html.escape(value or "--")}</strong></div>',
         unsafe_allow_html=True,
+    )
+
+
+def detail_row_html(label: str, value: str) -> str:
+    return (
+        '<div class="detail-line">'
+        f'<span>{html.escape(label)}</span>'
+        f'<strong>{html.escape(value or "--")}</strong>'
+        "</div>"
+    )
+
+
+def detail_html(item: dict[str, Any]) -> str:
+    quote = item.get("quote") or {}
+    underlying_quote = item.get("underlyingQuote") or {}
+    rows = [
+        ("類型", type_text(item.get("type") or "call")),
+        ("標的", f"{item.get('underlyingCode') or ''} {item.get('underlyingName') or ''}".strip()),
+        ("履約價", format_number(item.get("strike"))),
+        ("換股比例", format_number(item.get("ratio"), 4)),
+        ("到期日", item.get("expiry") or "--"),
+        ("評價日", item.get("evaluationDate") or "--"),
+        ("波動率", f"{item.get('volatilitySource') or '波動率'} {format_number((to_number(item.get('volatility')) or 0) * 100)}%"),
+        ("利率", f"{format_number((to_number(item.get('riskFreeRate')) or 0) * 100)}%"),
+        ("委買/委賣", f"{format_number(quote.get('bestBid'))} / {format_number(quote.get('bestAsk'))}"),
+        ("標的市場", f"{underlying_quote.get('market') or '--'}"),
+    ]
+    body = "".join(detail_row_html(label, value) for label, value in rows)
+    return (
+        '<details class="native-detail-popover">'
+        '<summary title="權證細節">☆</summary>'
+        f'<div class="native-detail-body">{body}</div>'
+        "</details>"
     )
 
 
@@ -950,6 +991,59 @@ def inject_css() -> None:
           line-height: 1.25;
           font-weight: 850;
         }
+        .card-header-grid {
+          display: grid;
+          grid-template-columns: minmax(150px, 1fr) 40px 38px 64px;
+          align-items: center;
+          gap: 4px 6px;
+          min-width: 0;
+          margin-bottom: 0.18rem;
+        }
+        .card-title-cell {
+          display: flex;
+          align-items: center;
+          gap: 5px;
+          min-width: 0;
+        }
+        .native-detail-popover {
+          position: relative;
+          flex: 0 0 auto;
+        }
+        .native-detail-popover summary {
+          display: grid;
+          width: 1.55rem;
+          height: 1.55rem;
+          place-items: center;
+          border: 1px solid var(--line);
+          border-radius: 999px;
+          background: #ffffff;
+          color: var(--accent-strong);
+          cursor: pointer;
+          font-size: 1rem;
+          line-height: 1;
+          list-style: none;
+        }
+        .native-detail-popover summary::-webkit-details-marker {
+          display: none;
+        }
+        .native-detail-popover[open] summary {
+          border-color: #9ecfbd;
+          background: #eef7f3;
+        }
+        .native-detail-body {
+          position: absolute;
+          z-index: 50;
+          top: 1.85rem;
+          left: 0;
+          width: max-content;
+          min-width: 270px;
+          max-width: 330px;
+          border: 1px solid var(--line);
+          border-radius: 8px;
+          background: #ffffff;
+          padding: 0.45rem 0.6rem;
+          box-shadow: 0 16px 36px rgba(18, 31, 27, 0.14);
+        }
         .metric-box { min-width: 0; }
         .metric-label {
           display: block;
@@ -1018,87 +1112,105 @@ def inject_css() -> None:
 def render_warrant_card(item: dict[str, Any], index: int) -> None:
     card_id = safe_key(item.get("id") or item.get("code") or str(index))
     with st.container(border=True, key=f"card_{card_id}"):
-        top = st.columns([2.6, 0.82, 0.72, 0.98], gap="small")
-        with top[0]:
-            title_cols = st.columns([0.86, 0.14], gap="small")
+        card_cols = st.columns([0.09, 1.0, 0.07], gap="small")
+
+        with card_cols[0]:
+            if st.button("▲", key=f"up_{card_id}", disabled=index == 0, help="上移"):
+                move_item(index, -1)
+            if st.button("▼", key=f"down_{card_id}", disabled=index == len(st.session_state["items"]) - 1, help="下移"):
+                move_item(index, 1)
+
+        changed = False
+        with card_cols[1]:
             title = f"{item.get('code') or ''} {item.get('name') or ''}".strip()
-            title_cols[0].markdown(
-                f'<div class="warrant-title" title="{html.escape(title)}">{html.escape(title)}</div>',
+            st.markdown(
+                '<div class="card-header-grid">'
+                '<div class="card-title-cell">'
+                f'<div class="warrant-title" title="{html.escape(title)}">{html.escape(title)}</div>'
+                f"{detail_html(item)}"
+                "</div>"
+                + metric_html("合理價", item.get("fairPrice"), accent=True)
+                + metric_html("報價", item.get("marketReference"))
+                + metric_html("現貨股價", item.get("spot"))
+                + "</div>",
                 unsafe_allow_html=True,
             )
-            with title_cols[1]:
-                if hasattr(st, "popover"):
-                    with st.popover("☆"):
-                        render_details(item)
-                else:
-                    with st.expander("☆"):
-                        render_details(item)
-        top[1].markdown(metric_html("合理價", item.get("fairPrice"), accent=True), unsafe_allow_html=True)
-        top[2].markdown(metric_html("報價", item.get("marketReference")), unsafe_allow_html=True)
-        top[3].markdown(metric_html("現貨股價", item.get("spot")), unsafe_allow_html=True)
 
-        calc_cols = st.columns(2, gap="small")
-        with calc_cols[0]:
-            with st.container(key=f"calc_forward_{card_id}"):
-                inner = st.columns([1.05, 0.95], gap="small")
-                spot_key = f"spot_text_{card_id}"
-                if spot_key not in st.session_state:
-                    st.session_state[spot_key] = format_input_number(item.get("testSpot", item.get("spot")))
-                with inner[0]:
-                    test_spot_raw = st.text_input(
-                        "股價",
-                        key=spot_key,
-                    )
-                test_spot = to_number(test_spot_raw)
-                simulated = item.get("fairPrice") if to_number(test_spot) == to_number(item.get("spot")) else fair_price_for_spot(item, test_spot)
-                item["testSpot"] = test_spot
-                item["simulatedPrice"] = simulated
-                with inner[1]:
-                    st.markdown(
-                        '<div class="calc-output">'
-                        + metric_html("權證價格", simulated, accent=True)
-                        + "</div>",
-                        unsafe_allow_html=True,
-                    )
+            calc_cols = st.columns(2, gap="small")
+            with calc_cols[0]:
+                with st.container(key=f"calc_forward_{card_id}"):
+                    inner = st.columns([1.0, 0.75], gap="small")
+                    spot_key = f"spot_text_{card_id}"
+                    if spot_key not in st.session_state:
+                        st.session_state[spot_key] = format_input_number(item.get("testSpot", item.get("spot")))
+                    with inner[0]:
+                        test_spot_raw = st.text_input("股價", key=spot_key)
+                    test_spot = to_number(test_spot_raw)
+                    if numbers_equal(test_spot, item.get("testSpot")):
+                        simulated = item.get("simulatedPrice")
+                        if to_number(simulated) is None:
+                            simulated = option_price(item, test_spot, item.get("volatility"))
+                            item["simulatedPrice"] = simulated
+                            changed = True
+                    elif numbers_equal(test_spot, item.get("spot")):
+                        simulated = item.get("fairPrice")
+                        changed = True
+                    else:
+                        simulated = fair_price_for_spot(item, test_spot)
+                        changed = True
+                    if changed:
+                        item["testSpot"] = test_spot
+                        item["simulatedPrice"] = simulated
+                    with inner[1]:
+                        st.markdown(
+                            '<div class="calc-output">'
+                            + metric_html("權證價格", simulated, accent=True)
+                            + "</div>",
+                            unsafe_allow_html=True,
+                        )
 
-        with calc_cols[1]:
-            with st.container(key=f"calc_reverse_{card_id}"):
-                inner = st.columns([1.05, 0.95], gap="small")
-                target_key = f"target_text_{card_id}"
-                if target_key not in st.session_state:
-                    st.session_state[target_key] = format_input_number(item.get("targetPrice", item.get("marketReference")))
-                with inner[0]:
-                    target_price_raw = st.text_input(
-                        "權證價格",
-                        key=target_key,
-                    )
-                target_price = to_number(target_price_raw)
-                implied = implied_spot_from_price(item, target_price)
-                item["targetPrice"] = target_price
-                item["impliedSpot"] = implied
-                with inner[1]:
-                    st.markdown(
-                        '<div class="calc-output">'
-                        + metric_html("股價", implied, accent=True)
-                        + "</div>",
-                        unsafe_allow_html=True,
-                    )
+            with calc_cols[1]:
+                with st.container(key=f"calc_reverse_{card_id}"):
+                    inner = st.columns([1.0, 0.9], gap="small")
+                    target_key = f"target_text_{card_id}"
+                    if target_key not in st.session_state:
+                        st.session_state[target_key] = format_input_number(item.get("targetPrice", item.get("marketReference")))
+                    with inner[0]:
+                        target_price_raw = st.text_input("權證價格", key=target_key)
+                    target_price = to_number(target_price_raw)
+                    if numbers_equal(target_price, item.get("targetPrice")):
+                        implied = item.get("impliedSpot")
+                        if to_number(implied) is None:
+                            implied = implied_spot_from_price(item, target_price)
+                            item["impliedSpot"] = implied
+                            changed = True
+                    else:
+                        implied = implied_spot_from_price(item, target_price)
+                        item["targetPrice"] = target_price
+                        item["impliedSpot"] = implied
+                        changed = True
+                    with inner[1]:
+                        st.markdown(
+                            '<div class="calc-output">'
+                            + metric_html("股價", implied, accent=True)
+                            + "</div>",
+                            unsafe_allow_html=True,
+                        )
 
-        actions = st.columns([0.18, 0.18, 0.2, 1.0], gap="small")
-        if actions[0].button("▲", key=f"up_{card_id}", disabled=index == 0, help="上移"):
-            move_item(index, -1)
-        if actions[1].button("▼", key=f"down_{card_id}", disabled=index == len(st.session_state["items"]) - 1, help="下移"):
-            move_item(index, 1)
-        if actions[2].button("×", key=f"delete_{card_id}", help="刪除這檔權證"):
-            delete_item(index)
-        if item.get("error"):
-            actions[3].warning(item["error"])
-        else:
-            actions[3].markdown(
-                f'<div class="small-note">更新 {html.escape(time_ago(item.get("updatedAt")))}</div>',
-                unsafe_allow_html=True,
-            )
-    persist_current_items()
+            if item.get("error"):
+                st.warning(item["error"])
+            else:
+                st.markdown(
+                    f'<div class="small-note card-timestamp">更新 {html.escape(time_ago(item.get("updatedAt")))}</div>',
+                    unsafe_allow_html=True,
+                )
+
+        with card_cols[2]:
+            if st.button("×", key=f"delete_{card_id}", help="刪除這檔權證"):
+                delete_item(index)
+
+        if changed:
+            persist_current_items()
 
 
 def render_details(item: dict[str, Any]) -> None:
@@ -1161,18 +1273,6 @@ def render_sidebar() -> None:
                 refresh_all_prices()
             except Exception as error:
                 st.error(str(error))
-
-        with st.expander("匯入舊版清單"):
-            st.caption('在舊版 Console 執行 copy(localStorage.getItem("warrant-watch-items-v3")) 後貼到這裡。')
-            import_text = st.text_area("舊版 localStorage JSON", height=110, key="legacy_import_text")
-            replace = st.checkbox("用匯入內容取代目前清單", value=False)
-            if st.button("匯入清單", use_container_width=True):
-                try:
-                    count = import_items(import_text, replace=replace)
-                    st.success(f"已匯入 {count} 檔權證")
-                    st.rerun()
-                except Exception as error:
-                    st.error(str(error))
 
 
 def main() -> None:
