@@ -744,6 +744,15 @@ def metric_html(label: str, value: Any, *, accent: bool = False) -> str:
     )
 
 
+def calc_result_html(label: str, value: Any) -> str:
+    return (
+        '<div class="calc-result">'
+        f'<span class="calc-result-label">{html.escape(label)}</span>'
+        f'<strong class="calc-result-value">{html.escape(format_number(value))}</strong>'
+        "</div>"
+    )
+
+
 def detail_line(label: str, value: str) -> None:
     st.markdown(
         f'<div class="detail-line"><span>{html.escape(label)}</span><strong>{html.escape(value or "--")}</strong></div>',
@@ -978,9 +987,9 @@ def inject_css() -> None:
         div[class*="st-key-calc_forward_"],
         div[class*="st-key-calc_reverse_"] {
           border-radius: 8px;
-          padding: 0.34rem 0.42rem 0.34rem;
+          padding: 0.46rem 0.5rem 0.42rem;
           border: 1px solid;
-          min-height: 4.3rem;
+          min-height: 4.65rem;
         }
         div[class*="st-key-calc_forward_"] {
           background: var(--blue-soft);
@@ -992,13 +1001,24 @@ def inject_css() -> None:
         }
         div[class*="st-key-calc_forward_"] label,
         div[class*="st-key-calc_reverse_"] label {
-          font-size: 0.72rem;
+          height: 1rem;
+          min-height: 1rem;
+          padding: 0 !important;
+          margin: 0 0 0.26rem !important;
+          display: flex;
+          align-items: center;
+        }
+        div[class*="st-key-calc_forward_"] label p,
+        div[class*="st-key-calc_reverse_"] label p {
+          font-size: 0.76rem;
+          line-height: 1rem;
           font-weight: 800;
-          color: var(--muted);
+          color: var(--muted) !important;
         }
         div[data-testid="stNumberInput"] input,
         div[data-testid="stTextInput"] input {
-          min-height: 1.8rem;
+          min-height: 2.05rem;
+          height: 2.05rem;
           padding-top: 0.15rem;
           padding-bottom: 0.15rem;
         }
@@ -1013,11 +1033,13 @@ def inject_css() -> None:
         }
         .card-header-grid {
           display: grid;
-          grid-template-columns: minmax(168px, 1fr) 48px 44px 76px;
-          align-items: center;
-          gap: 4px 8px;
+          grid-template-columns: minmax(150px, 1fr) 58px 54px 90px;
+          align-items: start;
+          gap: 4px 9px;
           min-width: 0;
-          margin-bottom: 0.34rem;
+          min-height: 2.55rem;
+          margin-bottom: 0.46rem;
+          padding-top: 0.05rem;
         }
         .card-title-cell {
           display: flex;
@@ -1068,18 +1090,21 @@ def inject_css() -> None:
           min-width: 0;
           text-align: left;
         }
+        .card-header-grid .metric-box {
+          padding-top: 0.03rem;
+        }
         .metric-label {
           display: block;
           color: var(--muted);
-          font-size: 0.68rem;
-          line-height: 1;
+          font-size: 0.7rem;
+          line-height: 1.02;
           font-weight: 850;
           white-space: nowrap;
         }
         .metric-value {
           display: block;
           color: var(--ink);
-          font-size: 0.98rem;
+          font-size: 0.96rem;
           line-height: 1.08;
           margin-top: 0.12rem;
           white-space: nowrap;
@@ -1087,41 +1112,65 @@ def inject_css() -> None:
         }
         .metric-value.accent { color: var(--green); }
         .calc-output {
-          text-align: right;
-          padding-top: 0.05rem;
+          min-width: 0;
         }
-        .calc-output .metric-label {
+        .calc-result {
+          display: grid;
+          grid-template-rows: 1rem 2.05rem;
+          gap: 0.26rem;
+          min-width: 0;
           text-align: right;
-          min-height: 0.78rem;
         }
-        .calc-output .metric-value {
-          font-size: 1.02rem;
-          line-height: 1.12;
+        .calc-result-label {
+          color: var(--muted);
+          font-size: 0.76rem;
+          line-height: 1rem;
+          font-weight: 850;
+          white-space: nowrap;
+        }
+        .calc-result-value {
+          display: flex;
+          align-items: center;
+          justify-content: flex-end;
+          min-width: 0;
+          min-height: 2.05rem;
+          color: var(--green);
+          font-size: 1rem;
+          line-height: 1;
+          font-weight: 850;
+          white-space: nowrap;
         }
         .card-actions {
           display: grid;
-          align-content: stretch;
-          gap: 0.42rem;
+          align-content: center;
+          justify-items: center;
+          gap: 0.36rem;
+          padding-top: 0.12rem;
+        }
+        div[class*="st-key-card_action_"],
+        div[class*="st-key-delete_"] {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          height: 1.45rem;
+          margin: 0 !important;
         }
         div[class*="st-key-card_action_"] button,
         div[class*="st-key-delete_"] button {
-          width: 1.75rem;
-          min-width: 1.75rem;
-          min-height: 1.75rem;
-          height: 1.75rem;
+          width: 1.45rem;
+          min-width: 1.45rem;
+          min-height: 1.45rem;
+          height: 1.45rem;
           padding: 0;
-          border-radius: 7px;
+          border-radius: 6px;
           font-size: 0.7rem;
           line-height: 1;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
         }
         div[class*="st-key-delete_"] button {
           color: var(--danger);
-          width: 1.35rem;
-          min-width: 1.35rem;
-          min-height: 1.35rem;
-          height: 1.35rem;
-          margin-top: 0.25rem;
-          font-size: 0.72rem;
         }
         .sidebar-update-time {
           color: var(--faint);
@@ -1206,7 +1255,7 @@ def render_warrant_card(item: dict[str, Any], index: int) -> None:
             calc_cols = st.columns(2, gap="small")
             with calc_cols[0]:
                 with st.container(key=f"calc_forward_{card_id}"):
-                    inner = st.columns([1.0, 0.82], gap="small")
+                    inner = st.columns([0.95, 1.05], gap="small")
                     spot_key = f"spot_text_{card_id}"
                     if spot_key not in st.session_state:
                         st.session_state[spot_key] = format_input_number(item.get("testSpot", item.get("spot")))
@@ -1230,15 +1279,13 @@ def render_warrant_card(item: dict[str, Any], index: int) -> None:
                         item["simulatedPrice"] = simulated
                     with inner[1]:
                         st.markdown(
-                            '<div class="calc-output">'
-                            + metric_html("權證價格", simulated, accent=True)
-                            + "</div>",
+                            '<div class="calc-output">' + calc_result_html("權證價格", simulated) + "</div>",
                             unsafe_allow_html=True,
                         )
 
             with calc_cols[1]:
                 with st.container(key=f"calc_reverse_{card_id}"):
-                    inner = st.columns([1.0, 0.82], gap="small")
+                    inner = st.columns([0.95, 1.05], gap="small")
                     target_key = f"target_text_{card_id}"
                     if target_key not in st.session_state:
                         st.session_state[target_key] = format_input_number(item.get("targetPrice", item.get("marketReference")))
@@ -1258,9 +1305,7 @@ def render_warrant_card(item: dict[str, Any], index: int) -> None:
                         changed = True
                     with inner[1]:
                         st.markdown(
-                            '<div class="calc-output">'
-                            + metric_html("股價", implied, accent=True)
-                            + "</div>",
+                            '<div class="calc-output">' + calc_result_html("股價", implied) + "</div>",
                             unsafe_allow_html=True,
                         )
 
