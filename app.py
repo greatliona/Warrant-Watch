@@ -6,6 +6,7 @@ import math
 import re
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -330,6 +331,7 @@ def apply_yuanta_overrides(info: dict[str, Any], yuanta: dict[str, Any] | None) 
     info["exerciseEndDate"] = compact_date_to_iso(yuanta.get("FLD_DUR_END")) or info.get("exerciseEndDate") or ""
 
 
+@st.cache_data(ttl=5, show_spinner=False)
 def fetch_quote(market: str, code: str) -> dict[str, Any] | None:
     params = {
         "ex_ch": f"{market}_{code}.tw",
@@ -453,6 +455,50 @@ def option_price(item: dict[str, Any], spot: Any, volatility: Any) -> float | No
     return max(0, raw_price * ratio)
 
 
+def pricing_volatility(item: dict[str, Any]) -> float:
+    return first_number(item.get("pricingVolatility"), item.get("volatility"), 0.45) or 0.45
+
+
+def model_price(item: dict[str, Any], spot: Any) -> float | None:
+    return option_price(item, spot, pricing_volatility(item))
+
+
+def calibrate_pricing_volatility(item: dict[str, Any], spot: Any, reference_price: Any) -> float | None:
+    target = to_number(reference_price)
+    spot_value = to_number(spot)
+    base_volatility = first_number(item.get("volatility"), 0.45)
+    if target is None or spot_value is None or base_volatility is None or target < 0 or spot_value <= 0:
+        return None
+
+    base_price = option_price(item, spot_value, base_volatility)
+    if base_price is None:
+        return None
+    if abs(base_price - target) <= max(0.005, target * 0.001):
+        return base_volatility
+
+    low = 0.0001
+    high = 5.0
+    low_price = option_price(item, spot_value, low)
+    high_price = option_price(item, spot_value, high)
+    if low_price is None or high_price is None:
+        return None
+    if target <= low_price:
+        return low
+    if target >= high_price:
+        return high
+
+    for _ in range(64):
+        mid = (low + high) / 2
+        mid_price = option_price(item, spot_value, mid)
+        if mid_price is None:
+            return None
+        if mid_price < target:
+            low = mid
+        else:
+            high = mid
+    return (low + high) / 2
+
+
 def implied_spot_from_price(item: dict[str, Any], target_price: Any) -> float | None:
     target = to_number(target_price)
     strike = to_number(item.get("strike"))
@@ -465,7 +511,7 @@ def implied_spot_from_price(item: dict[str, Any], target_price: Any) -> float | 
     high = max(strike, spot, 1) * 2
 
     def price_at(value: float) -> float:
-        return option_price(item, value, item.get("volatility")) or 0
+        return model_price(item, value) or 0
 
     if is_put:
         while price_at(low) < target and low > 0.000001:
@@ -572,11 +618,13 @@ def load_warrant(code: str, existing: dict[str, Any] | None = None) -> dict[str,
     }
     fallback_fair = option_price(item, spot, item["volatility"])
     item["fairPrice"] = fair_from_yuanta if fair_from_yuanta is not None else fallback_fair
+    calibrated_volatility = calibrate_pricing_volatility(item, spot, item["fairPrice"])
+    item["pricingVolatility"] = calibrated_volatility if calibrated_volatility is not None else item["volatility"]
 
     if to_number(item["testSpot"]) == to_number(spot):
         item["simulatedPrice"] = item["fairPrice"]
     else:
-        item["simulatedPrice"] = fair_price_for_spot(item, item["testSpot"])
+        item["simulatedPrice"] = model_price(item, item["testSpot"])
     item["impliedSpot"] = implied_spot_from_price(item, item["targetPrice"])
     return item
 
@@ -585,17 +633,7 @@ def fair_price_for_spot(item: dict[str, Any], spot: Any) -> float | None:
     spot_value = to_number(spot)
     if spot_value is None:
         return None
-    try:
-        info = find_warrant_info(item.get("code") or "")
-        yuanta = fetch_yuanta_warrant(item.get("code") or "")
-        if info:
-            apply_yuanta_overrides(info, yuanta)
-            fair = fetch_yuanta_fair_price(info, yuanta, spot_value)
-            if fair is not None:
-                return fair
-    except Exception:
-        pass
-    return option_price(item, spot_value, item.get("volatility"))
+    return model_price(item, spot_value)
 
 
 def read_saved_items() -> list[dict[str, Any]]:
@@ -614,12 +652,30 @@ def read_saved_items() -> list[dict[str, Any]]:
         if isinstance(item, dict) and item.get("code"):
             item.setdefault("id", str(uuid.uuid4()))
             item.setdefault("error", "")
-            valid_items.append(item)
+            valid_items.append(recalculate_derived_prices(item))
     return valid_items
 
 
 def write_saved_items(items: list[dict[str, Any]]) -> None:
     SAVE_PATH.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def ensure_pricing_fields(item: dict[str, Any]) -> dict[str, Any]:
+    if to_number(item.get("pricingVolatility")) is None:
+        calibrated_volatility = calibrate_pricing_volatility(item, item.get("spot"), item.get("fairPrice"))
+        if calibrated_volatility is not None:
+            item["pricingVolatility"] = calibrated_volatility
+    return item
+
+
+def recalculate_derived_prices(item: dict[str, Any]) -> dict[str, Any]:
+    ensure_pricing_fields(item)
+    if numbers_equal(item.get("testSpot"), item.get("spot")):
+        item["simulatedPrice"] = item.get("fairPrice")
+    else:
+        item["simulatedPrice"] = model_price(item, item.get("testSpot"))
+    item["impliedSpot"] = implied_spot_from_price(item, item.get("targetPrice"))
+    return item
 
 
 def normalize_saved_item(item: dict[str, Any]) -> dict[str, Any] | None:
@@ -636,10 +692,7 @@ def normalize_saved_item(item: dict[str, Any]) -> dict[str, Any] | None:
     normalized.setdefault("testSpot", normalized.get("spot"))
     normalized.setdefault("targetPrice", normalized.get("marketReference"))
     normalized.setdefault("updatedAt", int(time.time() * 1000))
-    if to_number(normalized.get("simulatedPrice")) is None:
-        normalized["simulatedPrice"] = option_price(normalized, normalized.get("testSpot"), normalized.get("volatility"))
-    normalized["impliedSpot"] = implied_spot_from_price(normalized, normalized.get("targetPrice"))
-    return normalized
+    return recalculate_derived_prices(normalized)
 
 
 def parse_import_items(raw_text: str) -> list[dict[str, Any]]:
@@ -797,6 +850,14 @@ def persist_current_items() -> None:
     write_saved_items(st.session_state["items"])
 
 
+def clear_realtime_caches() -> None:
+    for cached_fetch in (fetch_quote, fetch_yuanta_warrant, fetch_yuanta_quote_price):
+        try:
+            cached_fetch.clear()
+        except Exception:
+            pass
+
+
 def add_or_update_warrant(code: str) -> None:
     normalized = str(code or "").strip().upper()
     if not normalized:
@@ -817,20 +878,34 @@ def add_or_update_warrant(code: str) -> None:
 def refresh_all_prices() -> None:
     if not st.session_state["items"]:
         return
-    st.cache_data.clear()
-    refreshed: list[dict[str, Any]] = []
+    clear_realtime_caches()
+    try:
+        fetch_twse_warrants()
+        fetch_tpex_warrants()
+        fetch_twse_symbols()
+    except Exception:
+        pass
+    refreshed: list[dict[str, Any] | None] = [None] * len(st.session_state["items"])
     failed = 0
     progress = st.progress(0, text="更新價格中...")
-    for index, item in enumerate(st.session_state["items"]):
-        try:
-            refreshed.append(load_warrant(item.get("code") or "", item))
-        except Exception as error:
-            failed += 1
-            item["error"] = str(error)
-            refreshed.append(item)
-        progress.progress((index + 1) / len(st.session_state["items"]), text="更新價格中...")
+    max_workers = min(6, max(1, len(st.session_state["items"])))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(load_warrant, item.get("code") or "", dict(item)): index
+            for index, item in enumerate(st.session_state["items"])
+        }
+        for completed, future in enumerate(as_completed(futures), start=1):
+            index = futures[future]
+            item = st.session_state["items"][index]
+            try:
+                refreshed[index] = future.result()
+            except Exception as error:
+                failed += 1
+                item["error"] = str(error)
+                refreshed[index] = item
+            progress.progress(completed / len(st.session_state["items"]), text="更新價格中...")
     progress.empty()
-    st.session_state["items"] = refreshed
+    st.session_state["items"] = [item for item in refreshed if item is not None]
     persist_current_items()
     st.toast(f"已更新，{failed} 檔暫時抓不到" if failed else "價格已更新")
 
@@ -1579,7 +1654,7 @@ def render_warrant_card(item: dict[str, Any], index: int) -> None:
                     if numbers_equal(test_spot, item.get("testSpot")):
                         simulated = item.get("simulatedPrice")
                         if to_number(simulated) is None:
-                            simulated = option_price(item, test_spot, item.get("volatility"))
+                            simulated = model_price(item, test_spot)
                             item["simulatedPrice"] = simulated
                             changed = True
                     elif numbers_equal(test_spot, item.get("spot")):
@@ -1676,7 +1751,7 @@ def render_mobile_warrant_card(item: dict[str, Any], index: int) -> None:
                         if numbers_equal(test_spot, item.get("testSpot")):
                             simulated = item.get("simulatedPrice")
                             if to_number(simulated) is None:
-                                simulated = option_price(item, test_spot, item.get("volatility"))
+                                simulated = model_price(item, test_spot)
                                 item["simulatedPrice"] = simulated
                                 changed = True
                         elif numbers_equal(test_spot, item.get("spot")):
