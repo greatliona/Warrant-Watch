@@ -611,8 +611,8 @@ def load_warrant(code: str, existing: dict[str, Any] | None = None) -> dict[str,
         "volatilitySource": pricing.get("volatilitySource") or "波動率",
         "riskFreeRate": (first_number(pricing["riskFreeRate"], 1.5) or 1.5) / 100,
         "evaluationDate": pricing.get("evaluationDate") or "",
-        "testSpot": (existing or {}).get("testSpot", spot),
-        "targetPrice": (existing or {}).get("targetPrice", market_reference),
+        "testSpot": "",
+        "targetPrice": "",
         "updatedAt": int(time.time() * 1000),
         "error": "",
     }
@@ -620,12 +620,8 @@ def load_warrant(code: str, existing: dict[str, Any] | None = None) -> dict[str,
     item["fairPrice"] = fair_from_yuanta if fair_from_yuanta is not None else fallback_fair
     calibrated_volatility = calibrate_pricing_volatility(item, spot, item["fairPrice"])
     item["pricingVolatility"] = calibrated_volatility if calibrated_volatility is not None else item["volatility"]
-
-    if to_number(item["testSpot"]) == to_number(spot):
-        item["simulatedPrice"] = item["fairPrice"]
-    else:
-        item["simulatedPrice"] = model_price(item, item["testSpot"])
-    item["impliedSpot"] = implied_spot_from_price(item, item["targetPrice"])
+    item["simulatedPrice"] = None
+    item["impliedSpot"] = None
     return item
 
 
@@ -670,11 +666,10 @@ def ensure_pricing_fields(item: dict[str, Any]) -> dict[str, Any]:
 
 def recalculate_derived_prices(item: dict[str, Any]) -> dict[str, Any]:
     ensure_pricing_fields(item)
-    if numbers_equal(item.get("testSpot"), item.get("spot")):
-        item["simulatedPrice"] = item.get("fairPrice")
-    else:
-        item["simulatedPrice"] = model_price(item, item.get("testSpot"))
-    item["impliedSpot"] = implied_spot_from_price(item, item.get("targetPrice"))
+    item["testSpot"] = ""
+    item["targetPrice"] = ""
+    item["simulatedPrice"] = None
+    item["impliedSpot"] = None
     return item
 
 
@@ -753,6 +748,13 @@ def format_input_number(value: Any, digits: int = 2) -> str:
     return f"{parsed:.{digits}f}"
 
 
+def format_calc_number(value: Any, digits: int = 2) -> str:
+    parsed = to_number(value)
+    if parsed is None:
+        return ""
+    return f"{parsed:,.{digits}f}"
+
+
 def numbers_equal(left: Any, right: Any, *, tolerance: float = 1e-9) -> bool:
     left_number = to_number(left)
     right_number = to_number(right)
@@ -801,7 +803,7 @@ def calc_result_html(label: str, value: Any) -> str:
     return (
         '<div class="calc-result">'
         f'<span class="calc-result-label">{html.escape(label)}</span>'
-        f'<strong class="calc-result-value">{html.escape(format_number(value))}</strong>'
+        f'<strong class="calc-result-value">{html.escape(format_calc_number(value))}</strong>'
         "</div>"
     )
 
@@ -858,6 +860,13 @@ def clear_realtime_caches() -> None:
             pass
 
 
+def clear_calculation_inputs() -> None:
+    prefixes = ("spot_text_", "target_text_", "mobile_spot_text_", "mobile_target_text_")
+    for key in list(st.session_state.keys()):
+        if str(key).startswith(prefixes):
+            del st.session_state[key]
+
+
 def add_or_update_warrant(code: str) -> None:
     normalized = str(code or "").strip().upper()
     if not normalized:
@@ -871,6 +880,7 @@ def add_or_update_warrant(code: str) -> None:
         st.session_state["items"][existing_index] = item
     else:
         st.session_state["items"].append(item)
+    clear_calculation_inputs()
     persist_current_items()
     st.toast(f"{item['code']} 已儲存")
 
@@ -906,6 +916,7 @@ def refresh_all_prices() -> None:
             progress.progress(completed / len(st.session_state["items"]), text="更新價格中...")
     progress.empty()
     st.session_state["items"] = [item for item in refreshed if item is not None]
+    clear_calculation_inputs()
     persist_current_items()
     st.toast(f"已更新，{failed} 檔暫時抓不到" if failed else "價格已更新")
 
@@ -1647,25 +1658,28 @@ def render_warrant_card(item: dict[str, Any], index: int) -> None:
                     inner = st.columns([0.95, 1.05], gap="small")
                     spot_key = f"spot_text_{card_id}"
                     if spot_key not in st.session_state:
-                        st.session_state[spot_key] = format_input_number(item.get("testSpot", item.get("spot")))
+                        st.session_state[spot_key] = format_input_number(item.get("testSpot"))
                     with inner[0]:
                         test_spot_raw = st.text_input("股價", key=spot_key)
                     test_spot = to_number(test_spot_raw)
-                    if numbers_equal(test_spot, item.get("testSpot")):
-                        simulated = item.get("simulatedPrice")
-                        if to_number(simulated) is None:
-                            simulated = model_price(item, test_spot)
-                            item["simulatedPrice"] = simulated
+                    if test_spot is None:
+                        simulated = None
+                        if to_number(item.get("testSpot")) is not None or to_number(item.get("simulatedPrice")) is not None:
+                            item["testSpot"] = ""
+                            item["simulatedPrice"] = None
                             changed = True
-                    elif numbers_equal(test_spot, item.get("spot")):
-                        simulated = item.get("fairPrice")
-                        changed = True
                     else:
-                        simulated = fair_price_for_spot(item, test_spot)
-                        changed = True
-                    if changed:
-                        item["testSpot"] = test_spot
-                        item["simulatedPrice"] = simulated
+                        if numbers_equal(test_spot, item.get("testSpot")) and to_number(item.get("simulatedPrice")) is not None:
+                            simulated = item.get("simulatedPrice")
+                        elif numbers_equal(test_spot, item.get("spot")):
+                            simulated = item.get("fairPrice")
+                            changed = True
+                        else:
+                            simulated = fair_price_for_spot(item, test_spot)
+                            changed = True
+                        if changed:
+                            item["testSpot"] = test_spot
+                            item["simulatedPrice"] = simulated
                     with inner[1]:
                         st.markdown(
                             '<div class="calc-output">' + calc_result_html("權證價格", simulated) + "</div>",
@@ -1677,21 +1691,24 @@ def render_warrant_card(item: dict[str, Any], index: int) -> None:
                     inner = st.columns([0.95, 1.05], gap="small")
                     target_key = f"target_text_{card_id}"
                     if target_key not in st.session_state:
-                        st.session_state[target_key] = format_input_number(item.get("targetPrice", item.get("marketReference")))
+                        st.session_state[target_key] = format_input_number(item.get("targetPrice"))
                     with inner[0]:
                         target_price_raw = st.text_input("權證價格", key=target_key)
                     target_price = to_number(target_price_raw)
-                    if numbers_equal(target_price, item.get("targetPrice")):
-                        implied = item.get("impliedSpot")
-                        if to_number(implied) is None:
-                            implied = implied_spot_from_price(item, target_price)
-                            item["impliedSpot"] = implied
+                    if target_price is None:
+                        implied = None
+                        if to_number(item.get("targetPrice")) is not None or to_number(item.get("impliedSpot")) is not None:
+                            item["targetPrice"] = ""
+                            item["impliedSpot"] = None
                             changed = True
                     else:
-                        implied = implied_spot_from_price(item, target_price)
-                        item["targetPrice"] = target_price
-                        item["impliedSpot"] = implied
-                        changed = True
+                        if numbers_equal(target_price, item.get("targetPrice")) and to_number(item.get("impliedSpot")) is not None:
+                            implied = item.get("impliedSpot")
+                        else:
+                            implied = implied_spot_from_price(item, target_price)
+                            item["impliedSpot"] = implied
+                            item["targetPrice"] = target_price
+                            changed = True
                     with inner[1]:
                         st.markdown(
                             '<div class="calc-output">' + calc_result_html("股價", implied) + "</div>",
@@ -1744,25 +1761,28 @@ def render_mobile_warrant_card(item: dict[str, Any], index: int) -> None:
                         inner = st.columns([0.95, 1.05], gap="small")
                         spot_key = f"mobile_spot_text_{card_id}"
                         if spot_key not in st.session_state:
-                            st.session_state[spot_key] = format_input_number(item.get("testSpot", item.get("spot")))
+                            st.session_state[spot_key] = format_input_number(item.get("testSpot"))
                         with inner[0]:
                             test_spot_raw = st.text_input("股價", key=spot_key)
                         test_spot = to_number(test_spot_raw)
-                        if numbers_equal(test_spot, item.get("testSpot")):
-                            simulated = item.get("simulatedPrice")
-                            if to_number(simulated) is None:
-                                simulated = model_price(item, test_spot)
-                                item["simulatedPrice"] = simulated
+                        if test_spot is None:
+                            simulated = None
+                            if to_number(item.get("testSpot")) is not None or to_number(item.get("simulatedPrice")) is not None:
+                                item["testSpot"] = ""
+                                item["simulatedPrice"] = None
                                 changed = True
-                        elif numbers_equal(test_spot, item.get("spot")):
-                            simulated = item.get("fairPrice")
-                            changed = True
                         else:
-                            simulated = fair_price_for_spot(item, test_spot)
-                            changed = True
-                        if changed:
-                            item["testSpot"] = test_spot
-                            item["simulatedPrice"] = simulated
+                            if numbers_equal(test_spot, item.get("testSpot")) and to_number(item.get("simulatedPrice")) is not None:
+                                simulated = item.get("simulatedPrice")
+                            elif numbers_equal(test_spot, item.get("spot")):
+                                simulated = item.get("fairPrice")
+                                changed = True
+                            else:
+                                simulated = fair_price_for_spot(item, test_spot)
+                                changed = True
+                            if changed:
+                                item["testSpot"] = test_spot
+                                item["simulatedPrice"] = simulated
                         with inner[1]:
                             st.markdown(
                                 '<div class="mobile-calc-output">' + calc_result_html("權證價格", simulated) + "</div>",
@@ -1774,21 +1794,24 @@ def render_mobile_warrant_card(item: dict[str, Any], index: int) -> None:
                         inner = st.columns([0.95, 1.05], gap="small")
                         target_key = f"mobile_target_text_{card_id}"
                         if target_key not in st.session_state:
-                            st.session_state[target_key] = format_input_number(item.get("targetPrice", item.get("marketReference")))
+                            st.session_state[target_key] = format_input_number(item.get("targetPrice"))
                         with inner[0]:
                             target_price_raw = st.text_input("權證價格", key=target_key)
                         target_price = to_number(target_price_raw)
-                        if numbers_equal(target_price, item.get("targetPrice")):
-                            implied = item.get("impliedSpot")
-                            if to_number(implied) is None:
-                                implied = implied_spot_from_price(item, target_price)
-                                item["impliedSpot"] = implied
+                        if target_price is None:
+                            implied = None
+                            if to_number(item.get("targetPrice")) is not None or to_number(item.get("impliedSpot")) is not None:
+                                item["targetPrice"] = ""
+                                item["impliedSpot"] = None
                                 changed = True
                         else:
-                            implied = implied_spot_from_price(item, target_price)
-                            item["targetPrice"] = target_price
-                            item["impliedSpot"] = implied
-                            changed = True
+                            if numbers_equal(target_price, item.get("targetPrice")) and to_number(item.get("impliedSpot")) is not None:
+                                implied = item.get("impliedSpot")
+                            else:
+                                implied = implied_spot_from_price(item, target_price)
+                                item["impliedSpot"] = implied
+                                item["targetPrice"] = target_price
+                                changed = True
                         with inner[1]:
                             st.markdown(
                                 '<div class="mobile-calc-output">' + calc_result_html("股價", implied) + "</div>",
