@@ -72,6 +72,10 @@ def today_iso() -> str:
     return datetime.now(TAIPEI).date().isoformat()
 
 
+def today_compact() -> str:
+    return iso_to_compact(today_iso())
+
+
 def split_book(value: Any) -> list[float]:
     numbers: list[float] = []
     for item in str(value or "").split("_"):
@@ -721,6 +725,11 @@ def time_ago(timestamp: Any) -> str:
     return f"{minutes // 60} 小時前"
 
 
+def latest_update_text(items: list[dict[str, Any]]) -> str:
+    latest = max((to_number(item.get("updatedAt")) or 0 for item in items), default=0)
+    return time_ago(latest) if latest else "尚未更新"
+
+
 def safe_key(value: str) -> str:
     return re.sub(r"[^0-9A-Za-z_]", "_", value)
 
@@ -839,18 +848,24 @@ def inject_css() -> None:
         """
         <style>
         :root {
-          --bg: #f4f6f8;
-          --surface: #ffffff;
-          --ink: #17211d;
-          --muted: #62706a;
-          --line: #d8e0dc;
-          --accent: #147a63;
-          --accent-strong: #0d5d49;
-          --danger: #b42318;
-          --blue-soft: #eef7ff;
-          --blue-line: #b9dcff;
-          --orange-soft: #fff5e8;
-          --orange-line: #f2c790;
+          --bg: #202124;
+          --sidebar: #202124;
+          --surface: #292a2d;
+          --surface-soft: #303134;
+          --surface-input: #202124;
+          --ink: #e8eaed;
+          --muted: #bdc1c6;
+          --faint: #9aa0a6;
+          --line: #3c4043;
+          --line-strong: #5f6368;
+          --accent: #8ab4f8;
+          --accent-strong: #aecbfa;
+          --green: #81c995;
+          --danger: #f28b82;
+          --blue-soft: #1f2d3d;
+          --blue-line: #3f6ea5;
+          --orange-soft: #33281b;
+          --orange-line: #b26c1c;
         }
         .stApp { background: var(--bg); color: var(--ink); }
         header[data-testid="stHeader"] {
@@ -861,10 +876,10 @@ def inject_css() -> None:
         }
         .main .block-container {
           max-width: none;
-          padding: 0.75rem 1.1rem 1.4rem;
+          padding: 0.72rem 1.05rem 1.35rem;
         }
         section[data-testid="stSidebar"] {
-          background: #ffffff;
+          background: var(--sidebar);
           border-right: 1px solid var(--line);
         }
         section[data-testid="stSidebar"],
@@ -872,9 +887,9 @@ def inject_css() -> None:
           color: var(--ink);
         }
         section[data-testid="stSidebar"] h1 {
-          font-size: 1.55rem;
+          font-size: 1.42rem;
           line-height: 1.1;
-          margin-bottom: 0.25rem;
+          margin-bottom: 0.2rem;
         }
         section[data-testid="stSidebar"] [data-testid="stCaptionContainer"],
         section[data-testid="stSidebar"] label,
@@ -883,7 +898,7 @@ def inject_css() -> None:
         }
         div[data-testid="stTextInput"] input,
         div[data-testid="stNumberInput"] input {
-          background: #ffffff !important;
+          background: var(--surface-input) !important;
           color: var(--ink) !important;
           border: 1px solid var(--line) !important;
           border-radius: 8px !important;
@@ -892,7 +907,7 @@ def inject_css() -> None:
         button[data-testid="stBaseButton-secondary"],
         button[data-testid="stBaseButton-secondaryFormSubmit"],
         button[data-testid="stPopoverButton"] {
-          background: #ffffff;
+          background: var(--surface-soft);
           color: var(--ink);
           border: 1px solid var(--line);
           min-height: 2rem;
@@ -900,9 +915,9 @@ def inject_css() -> None:
           font-weight: 800;
         }
         button[data-testid="stBaseButton-secondaryFormSubmit"] {
-          background: var(--accent);
+          background: #3c78d8;
           color: #ffffff;
-          border-color: var(--accent);
+          border-color: #4c8bf5;
         }
         .stButton > button:hover,
         button[data-testid="stBaseButton-secondary"]:hover,
@@ -913,8 +928,8 @@ def inject_css() -> None:
         .stButton > button:disabled,
         button[data-testid="stBaseButton-secondary"]:disabled,
         button[data-testid="stBaseButton-secondaryFormSubmit"]:disabled {
-          background: #eef2ef;
-          color: #82918b;
+          background: #252628;
+          color: #74777c;
           border-color: var(--line);
         }
         button[data-testid="stPopoverButton"] {
@@ -938,7 +953,7 @@ def inject_css() -> None:
           display: none;
         }
         div[data-testid="stPopoverBody"] {
-          background: #ffffff !important;
+          background: var(--surface) !important;
           color: var(--ink) !important;
           border: 1px solid var(--line) !important;
           border-radius: 8px !important;
@@ -953,14 +968,19 @@ def inject_css() -> None:
         div[data-testid="stVerticalBlock"] { gap: 0.45rem; }
         div[data-testid="stHorizontalBlock"] { gap: 0.5rem; }
         div[class*="st-key-card_"] {
-          background: #fbfcfb;
+          background: var(--surface);
           border-radius: 8px;
+        }
+        div[class*="st-key-card_"] > div {
+          border-color: var(--line) !important;
+          background: var(--surface) !important;
         }
         div[class*="st-key-calc_forward_"],
         div[class*="st-key-calc_reverse_"] {
           border-radius: 8px;
-          padding: 0.28rem 0.45rem 0.22rem;
+          padding: 0.34rem 0.42rem 0.34rem;
           border: 1px solid;
+          min-height: 4.3rem;
         }
         div[class*="st-key-calc_forward_"] {
           background: var(--blue-soft);
@@ -993,11 +1013,11 @@ def inject_css() -> None:
         }
         .card-header-grid {
           display: grid;
-          grid-template-columns: minmax(150px, 1fr) 40px 38px 64px;
+          grid-template-columns: minmax(168px, 1fr) 48px 44px 76px;
           align-items: center;
-          gap: 4px 6px;
+          gap: 4px 8px;
           min-width: 0;
-          margin-bottom: 0.18rem;
+          margin-bottom: 0.34rem;
         }
         .card-title-cell {
           display: flex;
@@ -1016,7 +1036,7 @@ def inject_css() -> None:
           place-items: center;
           border: 1px solid var(--line);
           border-radius: 999px;
-          background: #ffffff;
+          background: var(--surface-soft);
           color: var(--accent-strong);
           cursor: pointer;
           font-size: 1rem;
@@ -1028,7 +1048,7 @@ def inject_css() -> None:
         }
         .native-detail-popover[open] summary {
           border-color: #9ecfbd;
-          background: #eef7f3;
+          background: #26354c;
         }
         .native-detail-body {
           position: absolute;
@@ -1040,11 +1060,14 @@ def inject_css() -> None:
           max-width: 330px;
           border: 1px solid var(--line);
           border-radius: 8px;
-          background: #ffffff;
+          background: var(--surface);
           padding: 0.45rem 0.6rem;
           box-shadow: 0 16px 36px rgba(18, 31, 27, 0.14);
         }
-        .metric-box { min-width: 0; }
+        .metric-box {
+          min-width: 0;
+          text-align: left;
+        }
         .metric-label {
           display: block;
           color: var(--muted);
@@ -1055,24 +1078,64 @@ def inject_css() -> None:
         }
         .metric-value {
           display: block;
-          color: #42504a;
-          font-size: 1rem;
+          color: var(--ink);
+          font-size: 0.98rem;
           line-height: 1.08;
           margin-top: 0.12rem;
           white-space: nowrap;
           font-weight: 850;
         }
-        .metric-value.accent { color: var(--accent-strong); }
+        .metric-value.accent { color: var(--green); }
         .calc-output {
           text-align: right;
-          padding-top: 0.15rem;
+          padding-top: 0.05rem;
         }
-        .calc-output .metric-value { font-size: 1.04rem; }
+        .calc-output .metric-label {
+          text-align: right;
+          min-height: 0.78rem;
+        }
+        .calc-output .metric-value {
+          font-size: 1.02rem;
+          line-height: 1.12;
+        }
+        .card-actions {
+          display: grid;
+          align-content: stretch;
+          gap: 0.42rem;
+        }
+        div[class*="st-key-card_action_"] button,
+        div[class*="st-key-delete_"] button {
+          width: 1.75rem;
+          min-width: 1.75rem;
+          min-height: 1.75rem;
+          height: 1.75rem;
+          padding: 0;
+          border-radius: 7px;
+          font-size: 0.7rem;
+          line-height: 1;
+        }
+        div[class*="st-key-delete_"] button {
+          color: var(--danger);
+          width: 1.35rem;
+          min-width: 1.35rem;
+          min-height: 1.35rem;
+          height: 1.35rem;
+          margin-top: 0.25rem;
+          font-size: 0.72rem;
+        }
+        .sidebar-update-time {
+          color: var(--faint);
+          font-size: 0.76rem;
+          line-height: 1.2;
+          margin-top: -0.18rem;
+          margin-bottom: 0.35rem;
+          text-align: center;
+        }
         .detail-line {
           display: grid;
           grid-template-columns: 5.5rem minmax(0, 1fr);
           gap: 0.5rem;
-          border-bottom: 1px solid #eef2ef;
+          border-bottom: 1px solid var(--line);
           padding: 0.18rem 0;
           font-size: 0.82rem;
         }
@@ -1095,7 +1158,7 @@ def inject_css() -> None:
         .empty-state {
           border: 1px dashed var(--line);
           border-radius: 8px;
-          background: #ffffff;
+          background: var(--surface);
           padding: 1.8rem;
           color: var(--muted);
           text-align: center;
@@ -1112,16 +1175,20 @@ def inject_css() -> None:
 def render_warrant_card(item: dict[str, Any], index: int) -> None:
     card_id = safe_key(item.get("id") or item.get("code") or str(index))
     with st.container(border=True, key=f"card_{card_id}"):
-        card_cols = st.columns([0.09, 1.0, 0.07], gap="small")
-
-        with card_cols[0]:
-            if st.button("▲", key=f"up_{card_id}", disabled=index == 0, help="上移"):
-                move_item(index, -1)
-            if st.button("▼", key=f"down_{card_id}", disabled=index == len(st.session_state["items"]) - 1, help="下移"):
-                move_item(index, 1)
+        card_cols = st.columns([1.0, 0.08], gap="small")
 
         changed = False
         with card_cols[1]:
+            st.markdown('<div class="card-actions">', unsafe_allow_html=True)
+            if st.button("▲", key=f"card_action_up_{card_id}", disabled=index == 0, help="上移"):
+                move_item(index, -1)
+            if st.button("▼", key=f"card_action_down_{card_id}", disabled=index == len(st.session_state["items"]) - 1, help="下移"):
+                move_item(index, 1)
+            if st.button("×", key=f"delete_{card_id}", help="刪除這檔權證"):
+                delete_item(index)
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        with card_cols[0]:
             title = f"{item.get('code') or ''} {item.get('name') or ''}".strip()
             st.markdown(
                 '<div class="card-header-grid">'
@@ -1139,7 +1206,7 @@ def render_warrant_card(item: dict[str, Any], index: int) -> None:
             calc_cols = st.columns(2, gap="small")
             with calc_cols[0]:
                 with st.container(key=f"calc_forward_{card_id}"):
-                    inner = st.columns([1.0, 0.75], gap="small")
+                    inner = st.columns([1.0, 0.82], gap="small")
                     spot_key = f"spot_text_{card_id}"
                     if spot_key not in st.session_state:
                         st.session_state[spot_key] = format_input_number(item.get("testSpot", item.get("spot")))
@@ -1171,7 +1238,7 @@ def render_warrant_card(item: dict[str, Any], index: int) -> None:
 
             with calc_cols[1]:
                 with st.container(key=f"calc_reverse_{card_id}"):
-                    inner = st.columns([1.0, 0.9], gap="small")
+                    inner = st.columns([1.0, 0.82], gap="small")
                     target_key = f"target_text_{card_id}"
                     if target_key not in st.session_state:
                         st.session_state[target_key] = format_input_number(item.get("targetPrice", item.get("marketReference")))
@@ -1199,15 +1266,6 @@ def render_warrant_card(item: dict[str, Any], index: int) -> None:
 
             if item.get("error"):
                 st.warning(item["error"])
-            else:
-                st.markdown(
-                    f'<div class="small-note card-timestamp">更新 {html.escape(time_ago(item.get("updatedAt")))}</div>',
-                    unsafe_allow_html=True,
-                )
-
-        with card_cols[2]:
-            if st.button("×", key=f"delete_{card_id}", help="刪除這檔權證"):
-                delete_item(index)
 
         if changed:
             persist_current_items()
@@ -1236,12 +1294,6 @@ def render_main() -> None:
         )
         return
 
-    latest = max((to_number(item.get("updatedAt")) or 0 for item in st.session_state["items"]), default=0)
-    st.markdown(
-        f'<div class="small-note">最近更新 {html.escape(time_ago(latest))}</div>',
-        unsafe_allow_html=True,
-    )
-
     for row_start in range(0, len(st.session_state["items"]), 2):
         cols = st.columns(2, gap="small")
         for offset, col in enumerate(cols):
@@ -1254,9 +1306,8 @@ def render_main() -> None:
 
 def render_sidebar() -> None:
     with st.sidebar:
-        st.markdown("### Warrant Watch")
-        st.title("權證合理價")
-        st.caption(f"評價日固定使用今天：{today_iso()}")
+        st.title("Warrant Watch!")
+        st.caption(f"評價日期: {today_compact()}")
 
         with st.form("add_warrant_form", clear_on_submit=True):
             code = st.text_input("權證代號", placeholder="例如 030012").strip().upper()
@@ -1273,6 +1324,10 @@ def render_sidebar() -> None:
                 refresh_all_prices()
             except Exception as error:
                 st.error(str(error))
+        st.markdown(
+            f'<div class="sidebar-update-time">最近更新 {html.escape(latest_update_text(st.session_state["items"]))}</div>',
+            unsafe_allow_html=True,
+        )
 
 
 def main() -> None:
