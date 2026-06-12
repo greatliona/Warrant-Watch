@@ -3,7 +3,9 @@ from __future__ import annotations
 import html
 import json
 import math
+import os
 import re
+import subprocess
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -29,6 +31,7 @@ YUANTA_WARRANT_DATA = "https://www.warrantwin.com.tw/eyuanta/ws/GetWarData.ashx"
 YUANTA_QUOTE = "https://www.warrantwin.com.tw/eyuanta/ws/Quote.ashx"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit local app"}
+APP_VERSION = "W1.0.2"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
@@ -78,6 +81,30 @@ def today_iso() -> str:
 
 def today_compact() -> str:
     return iso_to_compact(today_iso())
+
+
+def deployed_commit() -> str:
+    for key in ("STREAMLIT_GIT_COMMIT", "GIT_COMMIT", "COMMIT_SHA", "SOURCE_VERSION"):
+        value = os.environ.get(key)
+        if value:
+            return value[:7]
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--short=7", "HEAD"],
+            cwd=APP_DIR,
+            capture_output=True,
+            text=True,
+            timeout=1,
+            check=True,
+        )
+    except Exception:
+        return ""
+    return result.stdout.strip()
+
+
+def app_version_text() -> str:
+    commit = deployed_commit()
+    return f"版本 {APP_VERSION}" + (f" · {commit}" if commit else "")
 
 
 def split_book(value: Any) -> list[float]:
@@ -1337,6 +1364,20 @@ def inject_css() -> None:
           margin-bottom: 0.35rem;
           text-align: center;
         }
+        .app-version,
+        .mobile-version {
+          color: var(--faint);
+          font-size: 0.68rem;
+          line-height: 1.15;
+          letter-spacing: 0;
+        }
+        .app-version {
+          margin: -0.1rem 0 0.58rem;
+        }
+        .mobile-version {
+          margin-top: 0.26rem;
+          text-align: right;
+        }
         .detail-line {
           display: grid;
           grid-template-columns: 5.5rem minmax(0, 1fr);
@@ -1954,12 +1995,20 @@ def render_mobile_controls() -> None:
                     refresh_all_prices()
                 except Exception as error:
                     st.error(str(error))
+        st.markdown(
+            f'<div class="mobile-version">{html.escape(app_version_text())}</div>',
+            unsafe_allow_html=True,
+        )
 
 
 def render_sidebar() -> None:
     with st.sidebar:
         st.title("Warrant Watch!")
         st.caption(f"評價日期: {today_compact()}")
+        st.markdown(
+            f'<div class="app-version">{html.escape(app_version_text())}</div>',
+            unsafe_allow_html=True,
+        )
 
         with st.form("add_warrant_form", clear_on_submit=True):
             code = st.text_input("權證代號", placeholder="例如 030012").strip().upper()
