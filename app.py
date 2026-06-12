@@ -31,7 +31,7 @@ YUANTA_WARRANT_DATA = "https://www.warrantwin.com.tw/eyuanta/ws/GetWarData.ashx"
 YUANTA_QUOTE = "https://www.warrantwin.com.tw/eyuanta/ws/Quote.ashx"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit local app"}
-APP_VERSION = "W1.0.2a"
+APP_VERSION = "W1.0.2b"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
@@ -745,9 +745,8 @@ def load_warrant(code: str, existing: dict[str, Any] | None = None) -> dict[str,
         "updatedAt": int(time.time() * 1000),
         "error": "",
     }
-    fallback_fair = option_price(item, spot, item["volatility"])
-    item["fairPrice"] = fair_from_yuanta if fair_from_yuanta is not None else fallback_fair
-    item["fairPriceSource"] = "元大合理價" if fair_from_yuanta is not None else "本機估算"
+    item["fairPrice"] = fair_from_yuanta
+    item["fairPriceSource"] = "元大合理價" if fair_from_yuanta is not None else "元大合理價抓取失敗"
     calibrated_volatility = calibrate_pricing_volatility(item, spot, item["fairPrice"])
     item["pricingVolatility"] = calibrated_volatility if calibrated_volatility is not None else item["volatility"]
     item["simulatedPrice"] = None
@@ -763,7 +762,7 @@ def fair_price_for_spot(item: dict[str, Any], spot: Any) -> float | None:
         yuanta_price = fetch_yuanta_price_for_item(item, spot_value)
     except Exception:
         yuanta_price = None
-    return yuanta_price if yuanta_price is not None else model_price(item, spot_value)
+    return yuanta_price
 
 
 def read_saved_items() -> list[dict[str, Any]]:
@@ -1016,6 +1015,14 @@ def reset_calculation_state_once() -> None:
     for item in st.session_state.get("items", []):
         clear_item_calculations(item)
     st.session_state["_calculation_state_version"] = CALCULATION_STATE_VERSION
+
+
+def sync_session_version() -> None:
+    if st.session_state.get("_loaded_app_version") == APP_VERSION:
+        return
+    st.session_state["items"] = read_saved_items()
+    clear_calculation_inputs()
+    st.session_state["_loaded_app_version"] = APP_VERSION
 
 
 def add_or_update_warrant(code: str) -> None:
@@ -2093,6 +2100,7 @@ def main() -> None:
     inject_css()
     if "items" not in st.session_state:
         st.session_state["items"] = read_saved_items()
+    sync_session_version()
     reset_calculation_state_once()
     render_sidebar()
     render_mobile_controls()
