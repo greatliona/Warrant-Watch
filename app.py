@@ -987,9 +987,6 @@ def inject_css() -> None:
         div[class*="st-key-mobile_controls"] {
           display: none;
         }
-        div[class*="st-key-mobile_title_bar"] {
-          display: none;
-        }
         div[class*="st-key-mobile_watchlist"] {
           display: none;
         }
@@ -1311,9 +1308,18 @@ def inject_css() -> None:
             border: 1px solid var(--line);
             border-radius: 8px;
             background: var(--surface);
+            position: relative;
           }
-          div[class*="st-key-mobile_title_bar"] {
-            display: block;
+          div[class*="st-key-mobile_controls"]::before {
+            content: "Warrant Watch!";
+            position: absolute;
+            left: 0.12rem;
+            top: -2.05rem;
+            color: var(--ink);
+            font-size: 1.34rem;
+            line-height: 1.05;
+            font-weight: 850;
+            white-space: nowrap;
           }
           div[class*="st-key-mobile_controls"] div[data-testid="stVerticalBlock"] {
             gap: 0.2rem;
@@ -1767,9 +1773,6 @@ def render_main() -> None:
 
 
 def render_mobile_controls() -> None:
-    with st.container(key="mobile_title_bar"):
-        st.markdown('<div class="mobile-app-title">Warrant Watch!</div>', unsafe_allow_html=True)
-
     with st.container(key="mobile_controls"):
         control_cols = st.columns([0.26, 0.39, 0.35], gap="small")
         with control_cols[0]:
