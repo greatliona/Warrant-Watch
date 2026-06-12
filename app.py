@@ -33,7 +33,7 @@ YUANTA_QUOTE = "https://www.warrantwin.com.tw/eyuanta/ws/Quote.ashx"
 KGI_SERVICE = "https://warrant.kgi.com/EDWebService/WSInterfaceSwap.asmx/GetService"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit local app"}
-APP_VERSION = "W1.0.2d"
+APP_VERSION = "W1.0.2e"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
@@ -1029,7 +1029,6 @@ def reset_calculation_state_once() -> None:
 def sync_session_version() -> None:
     if st.session_state.get("_loaded_app_version") == APP_VERSION:
         return
-    st.session_state["items"] = read_saved_items()
     clear_calculation_inputs()
     st.session_state["_loaded_app_version"] = APP_VERSION
 
