@@ -1269,7 +1269,7 @@ def inject_css() -> None:
           grid-template-columns: repeat(3, minmax(0, 1fr));
           gap: 0.54rem;
           grid-column: 1 / -1;
-          padding-right: 1.85rem;
+          padding-right: 0;
         }
         .mobile-calc-output {
           min-width: 0;
@@ -1341,21 +1341,33 @@ def inject_css() -> None:
             font-size: 0.82rem;
             line-height: 1;
           }
+          .mobile-app-title {
+            display: none;
+          }
           div[class*="st-key-card_"] {
             margin-bottom: 0.54rem;
           }
           div[class*="st-key-mobile_card_"] {
-            position: relative;
             margin-bottom: 0.62rem;
             border-radius: 8px;
             background: var(--surface);
           }
           div[class*="st-key-mobile_card_"] > div {
-            position: relative;
             border: 1px solid var(--line) !important;
             background: var(--surface) !important;
             border-radius: 8px !important;
-            padding: 0.66rem 0.66rem 0.7rem !important;
+            padding: 0.58rem 0.56rem 0.62rem !important;
+          }
+          div[class*="st-key-mobile_card_"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] {
+            display: grid !important;
+            grid-template-columns: minmax(0, 1fr) 1.38rem !important;
+            gap: 0.42rem !important;
+            align-items: stretch !important;
+          }
+          div[class*="st-key-mobile_card_"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
+            width: auto !important;
+            min-width: 0 !important;
+            flex: none !important;
           }
           .native-detail-popover summary {
             width: 1.38rem;
@@ -1368,33 +1380,41 @@ def inject_css() -> None:
           .metric-value {
             font-size: 0.9rem;
           }
+          div[class*="st-key-mobile_calc_row_"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] {
+            display: grid !important;
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            gap: 0.44rem !important;
+            align-items: stretch !important;
+          }
+          div[class*="st-key-mobile_calc_row_"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
+            width: auto !important;
+            min-width: 0 !important;
+            flex: none !important;
+          }
           div[class*="st-key-mobile_calc_forward_"],
           div[class*="st-key-mobile_calc_reverse_"] {
-            position: relative;
             border-radius: 8px;
             border: 1px solid;
-            min-height: 3.45rem;
-            padding: 0.42rem 0.46rem 0.36rem;
-            margin-right: 1.95rem;
+            min-height: 3.35rem;
+            padding: 0.38rem 0.38rem 0.34rem;
           }
           div[class*="st-key-mobile_calc_forward_"] {
             background: var(--blue-soft);
             border-color: var(--blue-line);
-            margin-bottom: 0.44rem;
           }
           div[class*="st-key-mobile_calc_reverse_"] {
             background: var(--orange-soft);
             border-color: var(--orange-line);
           }
-          div[class*="st-key-mobile_calc_forward_"] div[data-testid="stHorizontalBlock"],
-          div[class*="st-key-mobile_calc_reverse_"] div[data-testid="stHorizontalBlock"] {
+          div[class*="st-key-mobile_calc_forward_"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"],
+          div[class*="st-key-mobile_calc_reverse_"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] {
             display: grid !important;
-            grid-template-columns: minmax(0, 1fr) 5.2rem !important;
-            gap: 0.42rem !important;
+            grid-template-columns: minmax(4.2rem, 0.95fr) minmax(4.05rem, 1.05fr) !important;
+            gap: 0.3rem !important;
             align-items: end !important;
           }
-          div[class*="st-key-mobile_calc_forward_"] div[data-testid="stHorizontalBlock"] > div,
-          div[class*="st-key-mobile_calc_reverse_"] div[data-testid="stHorizontalBlock"] > div {
+          div[class*="st-key-mobile_calc_forward_"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"],
+          div[class*="st-key-mobile_calc_reverse_"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
             width: auto !important;
             min-width: 0 !important;
             flex: none !important;
@@ -1415,43 +1435,34 @@ def inject_css() -> None:
           }
           div[class*="st-key-mobile_calc_forward_"] input,
           div[class*="st-key-mobile_calc_reverse_"] input {
-            min-height: 1.88rem;
-            height: 1.88rem;
+            min-height: 1.74rem;
+            height: 1.74rem;
+            padding-left: 0.46rem;
+            padding-right: 0.36rem;
+            font-size: 0.84rem;
           }
           .calc-result {
             grid-template-rows: 0.88rem 1.88rem;
-            gap: 0.2rem;
+            gap: 0.08rem;
           }
           .calc-result-value {
-            min-height: 1.88rem;
-            font-size: 0.93rem;
+            min-height: 1.74rem;
+            font-size: 0.84rem;
           }
           div[class*="st-key-mobile_actions_"] {
-            display: contents !important;
+            height: 100%;
           }
-          div[class*="st-key-mobile_actions_"] > div,
-          div[class*="st-key-mobile_actions_"] div[data-testid="stVerticalBlock"] {
-            display: contents !important;
-          }
-          div[class*="st-key-mobile_card_"] div[class*="st-key-mobile_action_up_"],
-          div[class*="st-key-mobile_card_"] div[class*="st-key-mobile_action_down_"],
-          div[class*="st-key-mobile_card_"] div[class*="st-key-mobile_delete_"] {
-            position: absolute;
-            right: 0.68rem;
-            z-index: 20;
+          div[class*="st-key-mobile_actions_"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stVerticalBlock"] {
+            display: grid !important;
+            align-content: center !important;
+            justify-items: center !important;
+            gap: 0.34rem !important;
+            min-height: 7.1rem;
           }
           div[class*="st-key-mobile_action_"],
           div[class*="st-key-mobile_delete_"] {
             height: 1.32rem;
-          }
-          div[class*="st-key-mobile_card_"] div[class*="st-key-mobile_action_up_"] {
-            top: 6.6rem;
-          }
-          div[class*="st-key-mobile_card_"] div[class*="st-key-mobile_action_down_"] {
-            top: 8.24rem;
-          }
-          div[class*="st-key-mobile_card_"] div[class*="st-key-mobile_delete_"] {
-            top: 9.88rem;
+            margin: 0 !important;
           }
           div[class*="st-key-mobile_action_"] button,
           div[class*="st-key-mobile_delete_"] button {
@@ -1470,6 +1481,41 @@ def inject_css() -> None:
         @media (min-width: 901px) {
           div[class*="st-key-mobile_controls"] {
             display: none !important;
+          }
+        }
+        @media (max-width: 380px) {
+          .metric-label {
+            font-size: 0.62rem;
+          }
+          .metric-value {
+            font-size: 0.82rem;
+          }
+          .mobile-title .warrant-title {
+            font-size: 0.9rem;
+          }
+          div[class*="st-key-mobile_calc_row_"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] {
+            gap: 0.36rem !important;
+          }
+          div[class*="st-key-mobile_calc_forward_"],
+          div[class*="st-key-mobile_calc_reverse_"] {
+            padding: 0.34rem 0.32rem 0.3rem;
+          }
+          div[class*="st-key-mobile_calc_forward_"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"],
+          div[class*="st-key-mobile_calc_reverse_"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] {
+            grid-template-columns: minmax(3.75rem, 0.9fr) minmax(3.35rem, 1.1fr) !important;
+            gap: 0.2rem !important;
+          }
+          div[class*="st-key-mobile_calc_forward_"] input,
+          div[class*="st-key-mobile_calc_reverse_"] input {
+            font-size: 0.78rem;
+            padding-left: 0.34rem;
+            padding-right: 0.22rem;
+          }
+          .calc-result-label {
+            font-size: 0.66rem;
+          }
+          .calc-result-value {
+            font-size: 0.76rem;
           }
         }
         </style>
@@ -1577,86 +1623,94 @@ def render_mobile_warrant_card(item: dict[str, Any], index: int) -> None:
     card_id = safe_key(item.get("id") or item.get("code") or str(index))
     changed = False
     with st.container(border=False, key=f"mobile_card_{card_id}"):
-        title = f"{item.get('code') or ''} {item.get('name') or ''}".strip()
-        st.markdown(
-            '<div class="mobile-card-header">'
-            '<div class="mobile-title">'
-            f'<div class="warrant-title" title="{html.escape(title)}">{html.escape(title)}</div>'
-            f"{detail_html(item)}"
-            "</div>"
-            '<div class="mobile-metrics">'
-            + metric_html("合理價", item.get("fairPrice"), accent=True)
-            + metric_html("報價", item.get("marketReference"))
-            + metric_html("現貨股價", item.get("spot"))
-            + "</div>"
-            "</div>",
-            unsafe_allow_html=True,
-        )
+        card_cols = st.columns([1.0, 0.08], gap="small")
 
-        with st.container(key=f"mobile_calc_forward_{card_id}"):
-            inner = st.columns([1.0, 0.52], gap="small")
-            spot_key = f"mobile_spot_text_{card_id}"
-            if spot_key not in st.session_state:
-                st.session_state[spot_key] = format_input_number(item.get("testSpot", item.get("spot")))
-            with inner[0]:
-                test_spot_raw = st.text_input("股價", key=spot_key)
-            test_spot = to_number(test_spot_raw)
-            if numbers_equal(test_spot, item.get("testSpot")):
-                simulated = item.get("simulatedPrice")
-                if to_number(simulated) is None:
-                    simulated = option_price(item, test_spot, item.get("volatility"))
-                    item["simulatedPrice"] = simulated
-                    changed = True
-            elif numbers_equal(test_spot, item.get("spot")):
-                simulated = item.get("fairPrice")
-                changed = True
-            else:
-                simulated = fair_price_for_spot(item, test_spot)
-                changed = True
-            if changed:
-                item["testSpot"] = test_spot
-                item["simulatedPrice"] = simulated
-            with inner[1]:
-                st.markdown(
-                    '<div class="mobile-calc-output">' + calc_result_html("權證價格", simulated) + "</div>",
-                    unsafe_allow_html=True,
-                )
+        with card_cols[1]:
+            with st.container(key=f"mobile_actions_{card_id}"):
+                if st.button("▲", key=f"mobile_action_up_{card_id}", disabled=index == 0, help="上移"):
+                    move_item(index, -1)
+                if st.button("▼", key=f"mobile_action_down_{card_id}", disabled=index == len(st.session_state["items"]) - 1, help="下移"):
+                    move_item(index, 1)
+                if st.button("×", key=f"mobile_delete_{card_id}", help="刪除這檔權證"):
+                    delete_item(index)
 
-        with st.container(key=f"mobile_calc_reverse_{card_id}"):
-            inner = st.columns([1.0, 0.52], gap="small")
-            target_key = f"mobile_target_text_{card_id}"
-            if target_key not in st.session_state:
-                st.session_state[target_key] = format_input_number(item.get("targetPrice", item.get("marketReference")))
-            with inner[0]:
-                target_price_raw = st.text_input("權證價格", key=target_key)
-            target_price = to_number(target_price_raw)
-            if numbers_equal(target_price, item.get("targetPrice")):
-                implied = item.get("impliedSpot")
-                if to_number(implied) is None:
-                    implied = implied_spot_from_price(item, target_price)
-                    item["impliedSpot"] = implied
-                    changed = True
-            else:
-                implied = implied_spot_from_price(item, target_price)
-                item["targetPrice"] = target_price
-                item["impliedSpot"] = implied
-                changed = True
-            with inner[1]:
-                st.markdown(
-                    '<div class="mobile-calc-output">' + calc_result_html("股價", implied) + "</div>",
-                    unsafe_allow_html=True,
-                )
+        with card_cols[0]:
+            title = f"{item.get('code') or ''} {item.get('name') or ''}".strip()
+            st.markdown(
+                '<div class="mobile-card-header">'
+                '<div class="mobile-title">'
+                f'<div class="warrant-title" title="{html.escape(title)}">{html.escape(title)}</div>'
+                f"{detail_html(item)}"
+                "</div>"
+                '<div class="mobile-metrics">'
+                + metric_html("合理價", item.get("fairPrice"), accent=True)
+                + metric_html("報價", item.get("marketReference"))
+                + metric_html("現貨股價", item.get("spot"))
+                + "</div>"
+                "</div>",
+                unsafe_allow_html=True,
+            )
 
-        with st.container(key=f"mobile_actions_{card_id}"):
-            if st.button("▲", key=f"mobile_action_up_{card_id}", disabled=index == 0, help="上移"):
-                move_item(index, -1)
-            if st.button("▼", key=f"mobile_action_down_{card_id}", disabled=index == len(st.session_state["items"]) - 1, help="下移"):
-                move_item(index, 1)
-            if st.button("×", key=f"mobile_delete_{card_id}", help="刪除這檔權證"):
-                delete_item(index)
+            with st.container(key=f"mobile_calc_row_{card_id}"):
+                calc_cols = st.columns(2, gap="small")
+                with calc_cols[0]:
+                    with st.container(key=f"mobile_calc_forward_{card_id}"):
+                        inner = st.columns([0.95, 1.05], gap="small")
+                        spot_key = f"mobile_spot_text_{card_id}"
+                        if spot_key not in st.session_state:
+                            st.session_state[spot_key] = format_input_number(item.get("testSpot", item.get("spot")))
+                        with inner[0]:
+                            test_spot_raw = st.text_input("股價", key=spot_key)
+                        test_spot = to_number(test_spot_raw)
+                        if numbers_equal(test_spot, item.get("testSpot")):
+                            simulated = item.get("simulatedPrice")
+                            if to_number(simulated) is None:
+                                simulated = option_price(item, test_spot, item.get("volatility"))
+                                item["simulatedPrice"] = simulated
+                                changed = True
+                        elif numbers_equal(test_spot, item.get("spot")):
+                            simulated = item.get("fairPrice")
+                            changed = True
+                        else:
+                            simulated = fair_price_for_spot(item, test_spot)
+                            changed = True
+                        if changed:
+                            item["testSpot"] = test_spot
+                            item["simulatedPrice"] = simulated
+                        with inner[1]:
+                            st.markdown(
+                                '<div class="mobile-calc-output">' + calc_result_html("權證價格", simulated) + "</div>",
+                                unsafe_allow_html=True,
+                            )
 
-        if item.get("error"):
-            st.warning(item["error"])
+                with calc_cols[1]:
+                    with st.container(key=f"mobile_calc_reverse_{card_id}"):
+                        inner = st.columns([0.95, 1.05], gap="small")
+                        target_key = f"mobile_target_text_{card_id}"
+                        if target_key not in st.session_state:
+                            st.session_state[target_key] = format_input_number(item.get("targetPrice", item.get("marketReference")))
+                        with inner[0]:
+                            target_price_raw = st.text_input("權證價格", key=target_key)
+                        target_price = to_number(target_price_raw)
+                        if numbers_equal(target_price, item.get("targetPrice")):
+                            implied = item.get("impliedSpot")
+                            if to_number(implied) is None:
+                                implied = implied_spot_from_price(item, target_price)
+                                item["impliedSpot"] = implied
+                                changed = True
+                        else:
+                            implied = implied_spot_from_price(item, target_price)
+                            item["targetPrice"] = target_price
+                            item["impliedSpot"] = implied
+                            changed = True
+                        with inner[1]:
+                            st.markdown(
+                                '<div class="mobile-calc-output">' + calc_result_html("股價", implied) + "</div>",
+                                unsafe_allow_html=True,
+                            )
+
+            if item.get("error"):
+                st.warning(item["error"])
 
     if changed:
         persist_current_items()
