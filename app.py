@@ -8,6 +8,7 @@ import re
 import subprocess
 import time
 import uuid
+import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
@@ -29,9 +30,10 @@ TWSE_SYMBOLS = "https://openapi.twse.com.tw/v1/exchangeReport/TWTB4U"
 TPEX_WARRANTS = "https://www.tpex.org.tw/openapi/v1/mopsfin_t187ap37_O"
 YUANTA_WARRANT_DATA = "https://www.warrantwin.com.tw/eyuanta/ws/GetWarData.ashx"
 YUANTA_QUOTE = "https://www.warrantwin.com.tw/eyuanta/ws/Quote.ashx"
+KGI_SERVICE = "https://warrant.kgi.com/EDWebService/WSInterfaceSwap.asmx/GetService"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit local app"}
-APP_VERSION = "W1.0.2b"
+APP_VERSION = "W1.0.2c"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
@@ -256,6 +258,101 @@ def fetch_yuanta_quote_calc(params: dict[str, str]) -> dict[str, Any] | None:
 def fetch_yuanta_quote_price(params: dict[str, str]) -> float | None:
     calc = fetch_yuanta_quote_calc(params)
     return to_number((calc or {}).get("PriceTheory"))
+
+
+@st.cache_data(ttl=15, show_spinner=False)
+def fetch_kgi_service(service_id: str, params: dict[str, Any]) -> Any:
+    payload = dict(params)
+    payload["LocationPathName"] = "/EDWebSite/Views/WarrantCalculator/WarrantCalculatorIframe.aspx"
+    response = requests.post(
+        KGI_SERVICE,
+        headers={
+            **HEADERS,
+            "Origin": "https://warrant.kgi.com",
+            "Referer": "https://warrant.kgi.com/EDWebSite/Views/WarrantCalculator/WarrantCalculatorIframe.aspx",
+        },
+        data={
+            "serviceId": service_id,
+            "parametersOfJson": json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+        },
+        timeout=15,
+    )
+    response.raise_for_status()
+    root = ET.fromstring(response.text)
+    namespace = {"kgi": "http://tempuri.org/"}
+    result = root.find("kgi:Result", namespace)
+    if result is not None and str(result.text).lower() != "true":
+        return None
+    value = root.find("kgi:ValueOfJson", namespace)
+    if value is None or not value.text:
+        return None
+    return json.loads(value.text)
+
+
+@st.cache_data(ttl=BASIC_DATA_TTL_SECONDS, show_spinner=False)
+def fetch_kgi_warrant_list() -> list[dict[str, Any]]:
+    result = fetch_kgi_service("S0600013_NormalWarrantList", {})
+    return result if isinstance(result, list) else []
+
+
+def find_kgi_warrant_entry(code: str) -> dict[str, Any] | None:
+    normalized = str(code or "").strip().upper()
+    for item in fetch_kgi_warrant_list():
+        text = str(item.get("TEXT") or "").upper()
+        if text.startswith(f"{normalized} "):
+            return item
+    return None
+
+
+def fetch_kgi_warrant(code: str) -> dict[str, Any] | None:
+    entry = find_kgi_warrant_entry(code)
+    insnbr = int(to_number((entry or {}).get("INSTR_INSNBR")) or 0)
+    if not insnbr:
+        return None
+    result = fetch_kgi_service("S0600013_GetWarrant", {"INSTR_INSNBR": insnbr})
+    if isinstance(result, list) and result:
+        return result[0]
+    return None
+
+
+def build_kgi_calc_params_from_warrant(warrant: dict[str, Any], spot: Any) -> dict[str, Any] | None:
+    insnbr = int(to_number(warrant.get("INSTR_INSNBR")) or 0)
+    vol = to_number(warrant.get("MTM_BID_VOL"))
+    spot_value = to_number(spot)
+    if not insnbr or vol is None or spot_value is None:
+        return None
+    return {
+        "INSTR_INSNBR": insnbr,
+        "PROCESS_DATE": int(today_compact()),
+        "VOL": vol,
+        "UNDERLYING_PRICE": spot_value,
+    }
+
+
+def build_kgi_calc_params_from_item(item: dict[str, Any], spot: Any) -> dict[str, Any] | None:
+    spot_value = to_number(spot)
+    if spot_value is None:
+        return None
+    params = dict(item.get("kgiCalcParams") or {})
+    if not params:
+        warrant = fetch_kgi_warrant(str(item.get("code") or ""))
+        params = build_kgi_calc_params_from_warrant(warrant or {}, spot_value) or {}
+    params["UNDERLYING_PRICE"] = spot_value
+    if not params.get("INSTR_INSNBR") or params.get("VOL") is None or not params.get("PROCESS_DATE"):
+        return None
+    return params
+
+
+def fetch_kgi_theoretical_price(params: dict[str, Any] | None) -> float | None:
+    if not params:
+        return None
+    result = fetch_kgi_service("S0600018_GetTheoreticalPrice", params)
+    return to_number(result)
+
+
+def fetch_kgi_price_for_item(item: dict[str, Any], spot: Any) -> float | None:
+    params = build_kgi_calc_params_from_item(item, spot)
+    return fetch_kgi_theoretical_price(params)
 
 
 def choose_volatility(row: dict[str, Any] | None) -> dict[str, Any]:
@@ -525,105 +622,6 @@ def quote_reference(quote: dict[str, Any] | None) -> float | None:
     )
 
 
-def normal_cdf(x: float) -> float:
-    sign = -1 if x < 0 else 1
-    a1 = 0.254829592
-    a2 = -0.284496736
-    a3 = 1.421413741
-    a4 = -1.453152027
-    a5 = 1.061405429
-    p = 0.3275911
-    absolute = abs(x)
-    t = 1 / (1 + p * absolute)
-    erf = sign * (1 - (((((a5 * t + a4) * t + a3) * t + a2) * t + a1) * t * math.exp(-absolute * absolute)))
-    return 0.5 * (1 + erf)
-
-
-def days_to_expiry(expiry: str) -> int:
-    if not expiry:
-        return 0
-    try:
-        end = datetime.fromisoformat(f"{expiry}T13:30:00+08:00")
-    except ValueError:
-        return 0
-    now = datetime.now(TAIPEI)
-    return max(0, math.ceil((end - now).total_seconds() / 86400))
-
-
-def years_to_expiry(expiry: str) -> float:
-    return max(days_to_expiry(expiry) / 365, 1 / 365)
-
-
-def option_price(item: dict[str, Any], spot: Any, volatility: Any) -> float | None:
-    s = to_number(spot)
-    k = to_number(item.get("strike"))
-    ratio = to_number(item.get("ratio"))
-    sigma = max(0.0001, min(5, to_number(volatility) or 0.45))
-    r = to_number(item.get("riskFreeRate")) or 0.015
-    q = 0
-    expiry = item.get("expiry") or item.get("exerciseEndDate") or ""
-    t = years_to_expiry(expiry)
-
-    if not s or not k or not ratio or s <= 0 or k <= 0 or ratio <= 0:
-        return None
-
-    sqrt_t = math.sqrt(t)
-    d1 = (math.log(s / k) + (r - q + 0.5 * sigma * sigma) * t) / (sigma * sqrt_t)
-    d2 = d1 - sigma * sqrt_t
-    discount_q = math.exp(-q * t)
-    discount_r = math.exp(-r * t)
-    is_call = item.get("type") != "put"
-    if is_call:
-        raw_price = s * discount_q * normal_cdf(d1) - k * discount_r * normal_cdf(d2)
-    else:
-        raw_price = k * discount_r * normal_cdf(-d2) - s * discount_q * normal_cdf(-d1)
-    return max(0, raw_price * ratio)
-
-
-def pricing_volatility(item: dict[str, Any]) -> float:
-    return first_number(item.get("pricingVolatility"), item.get("volatility"), 0.45) or 0.45
-
-
-def model_price(item: dict[str, Any], spot: Any) -> float | None:
-    return option_price(item, spot, pricing_volatility(item))
-
-
-def calibrate_pricing_volatility(item: dict[str, Any], spot: Any, reference_price: Any) -> float | None:
-    target = to_number(reference_price)
-    spot_value = to_number(spot)
-    base_volatility = first_number(item.get("volatility"), 0.45)
-    if target is None or spot_value is None or base_volatility is None or target < 0 or spot_value <= 0:
-        return None
-
-    base_price = option_price(item, spot_value, base_volatility)
-    if base_price is None:
-        return None
-    if abs(base_price - target) <= max(0.005, target * 0.001):
-        return base_volatility
-
-    low = 0.0001
-    high = 5.0
-    low_price = option_price(item, spot_value, low)
-    high_price = option_price(item, spot_value, high)
-    if low_price is None or high_price is None:
-        return None
-    if target <= low_price:
-        return low
-    if target >= high_price:
-        return high
-
-    for _ in range(64):
-        mid = (low + high) / 2
-        mid_price = option_price(item, spot_value, mid)
-        if mid_price is None:
-            return None
-        if mid_price < target:
-            low = mid
-        else:
-            high = mid
-    return (low + high) / 2
-
-
 def implied_spot_from_price(item: dict[str, Any], target_price: Any) -> float | None:
     target = to_number(target_price)
     strike = to_number(item.get("strike"))
@@ -717,6 +715,15 @@ def load_warrant(code: str, existing: dict[str, Any] | None = None) -> dict[str,
         fair_from_yuanta = fetch_yuanta_quote_price(yuanta_calc_params) if yuanta_calc_params else None
     except Exception:
         fair_from_yuanta = None
+    kgi_calc_params: dict[str, Any] = {}
+    fair_from_kgi = None
+    if fair_from_yuanta is None:
+        try:
+            kgi_warrant = fetch_kgi_warrant(normalized)
+            kgi_calc_params = build_kgi_calc_params_from_warrant(kgi_warrant or {}, underlying_price) or {}
+            fair_from_kgi = fetch_kgi_theoretical_price(kgi_calc_params)
+        except Exception:
+            fair_from_kgi = None
 
     market_reference = quote_reference(quote)
     spot = first_number(pricing["underlyingPrice"], quote_reference(underlying_quote))
@@ -740,15 +747,19 @@ def load_warrant(code: str, existing: dict[str, Any] | None = None) -> dict[str,
         "riskFreeRate": (first_number(pricing["riskFreeRate"], 1.5) or 1.5) / 100,
         "evaluationDate": pricing.get("evaluationDate") or "",
         "yuantaCalcParams": yuanta_calc_params or {},
+        "kgiCalcParams": kgi_calc_params,
         "testSpot": "",
         "targetPrice": "",
         "updatedAt": int(time.time() * 1000),
         "error": "",
     }
-    item["fairPrice"] = fair_from_yuanta
-    item["fairPriceSource"] = "元大合理價" if fair_from_yuanta is not None else "元大合理價抓取失敗"
-    calibrated_volatility = calibrate_pricing_volatility(item, spot, item["fairPrice"])
-    item["pricingVolatility"] = calibrated_volatility if calibrated_volatility is not None else item["volatility"]
+    item["fairPrice"] = fair_from_yuanta if fair_from_yuanta is not None else fair_from_kgi
+    if fair_from_yuanta is not None:
+        item["fairPriceSource"] = "元大合理價"
+    elif fair_from_kgi is not None:
+        item["fairPriceSource"] = "凱基理論價"
+    else:
+        item["fairPriceSource"] = "理論價抓取失敗"
     item["simulatedPrice"] = None
     item["impliedSpot"] = None
     return item
@@ -762,7 +773,12 @@ def fair_price_for_spot(item: dict[str, Any], spot: Any) -> float | None:
         yuanta_price = fetch_yuanta_price_for_item(item, spot_value)
     except Exception:
         yuanta_price = None
-    return yuanta_price
+    if yuanta_price is not None:
+        return yuanta_price
+    try:
+        return fetch_kgi_price_for_item(item, spot_value)
+    except Exception:
+        return None
 
 
 def read_saved_items() -> list[dict[str, Any]]:
@@ -792,7 +808,9 @@ def clear_item_calculations(item: dict[str, Any]) -> dict[str, Any]:
 
 
 def item_without_calculations(item: dict[str, Any]) -> dict[str, Any]:
-    return clear_item_calculations(dict(item))
+    payload = clear_item_calculations(dict(item))
+    payload.pop("pricingVolatility", None)
+    return payload
 
 
 def write_saved_items(items: list[dict[str, Any]]) -> None:
@@ -800,16 +818,7 @@ def write_saved_items(items: list[dict[str, Any]]) -> None:
     SAVE_PATH.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def ensure_pricing_fields(item: dict[str, Any]) -> dict[str, Any]:
-    if to_number(item.get("pricingVolatility")) is None:
-        calibrated_volatility = calibrate_pricing_volatility(item, item.get("spot"), item.get("fairPrice"))
-        if calibrated_volatility is not None:
-            item["pricingVolatility"] = calibrated_volatility
-    return item
-
-
 def recalculate_derived_prices(item: dict[str, Any]) -> dict[str, Any]:
-    ensure_pricing_fields(item)
     return clear_item_calculations(item)
 
 
