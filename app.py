@@ -1243,28 +1243,13 @@ def inject_css() -> None:
         }
         @media (max-width: 900px) {
           header[data-testid="stHeader"] {
-            background: var(--bg);
-            height: 2.8rem;
+            display: none;
           }
           div[data-testid="collapsedControl"] {
-            display: flex !important;
-            visibility: visible !important;
-            opacity: 1 !important;
-            z-index: 999999 !important;
-            position: fixed !important;
-            top: 0.46rem !important;
-            left: 0.5rem !important;
-          }
-          div[data-testid="collapsedControl"] button {
-            background: var(--surface-soft) !important;
-            border: 1px solid var(--line) !important;
-            color: var(--ink) !important;
-            border-radius: 8px !important;
-            width: 2rem !important;
-            height: 2rem !important;
+            display: none !important;
           }
           .main .block-container {
-            padding: 2.9rem 0.45rem 1rem;
+            padding: 0.5rem 0.45rem 1rem;
           }
           div[class*="st-key-mobile_controls"] {
             display: block;
@@ -1279,7 +1264,7 @@ def inject_css() -> None:
           }
           div[class*="st-key-mobile_controls"] div[data-testid="stHorizontalBlock"] {
             display: grid !important;
-            grid-template-columns: minmax(0, 1fr) 7.6rem !important;
+            grid-template-columns: 4.6rem minmax(0, 1fr) 7.2rem !important;
             gap: 0.5rem !important;
             align-items: center !important;
           }
@@ -1294,38 +1279,38 @@ def inject_css() -> None:
             padding: 0 0.62rem;
             font-size: 0.82rem;
           }
+          div[class*="st-key-mobile_controls"] button[data-testid="stPopoverButton"] {
+            width: 100%;
+            min-width: 0;
+            height: 1.9rem;
+            min-height: 1.9rem;
+            padding: 0 0.52rem !important;
+            color: var(--ink);
+          }
+          div[class*="st-key-mobile_controls"] button[data-testid="stPopoverButton"] p {
+            font-size: 0.82rem;
+            line-height: 1;
+          }
           div[class*="st-key-card_"] {
             margin-bottom: 0.54rem;
           }
           div[class*="st-key-card_"] > div {
+            position: relative;
             padding: 0.58rem 0.58rem !important;
           }
-          div[class*="st-key-card_"] > div > div[data-testid="stVerticalBlock"] > div[data-testid="stHorizontalBlock"],
-          div[class*="st-key-card_"] > div > div > div[data-testid="stVerticalBlock"] > div[data-testid="stHorizontalBlock"] {
-            display: grid !important;
-            grid-template-columns: minmax(0, 1fr) 1.55rem !important;
-            gap: 0.45rem !important;
-            align-items: stretch !important;
-          }
-          div[class*="st-key-card_"] > div > div[data-testid="stVerticalBlock"] > div[data-testid="stHorizontalBlock"] > div,
-          div[class*="st-key-card_"] > div > div > div[data-testid="stVerticalBlock"] > div[data-testid="stHorizontalBlock"] > div {
-            width: auto !important;
-            min-width: 0 !important;
-            flex: none !important;
-          }
           .card-header-grid {
-            grid-template-columns: minmax(0, 1fr) 2rem 3.25rem 3.25rem 4.75rem;
-            gap: 0.2rem 0.36rem;
-            min-height: 2.2rem;
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.35fr);
+            gap: 0.25rem 0.5rem;
+            min-height: 0;
             margin-bottom: 0.46rem;
             align-items: start;
           }
           .card-title-cell {
             gap: 0.25rem;
-            grid-column: 1 / span 2;
+            grid-column: 1 / -1;
           }
           .warrant-title {
-            font-size: 0.92rem;
+            font-size: 0.96rem;
             line-height: 1.15;
           }
           .native-detail-popover summary {
@@ -1343,6 +1328,7 @@ def inject_css() -> None:
           div[class*="st-key-calc_reverse_"] {
             min-height: 3.45rem;
             padding: 0.42rem 0.46rem 0.36rem;
+            margin-right: 1.95rem;
           }
           div[class*="st-key-calc_forward_"] {
             margin-bottom: 0.44rem;
@@ -1389,9 +1375,12 @@ def inject_css() -> None:
             display: grid;
             grid-template-columns: 1.32rem;
             justify-content: center;
-            align-content: center;
             gap: 0.36rem;
-            padding: 3.45rem 0 0;
+            padding: 0;
+            position: absolute;
+            right: 0.58rem;
+            top: 4.9rem;
+            z-index: 5;
           }
           div[class*="st-key-card_action_"],
           div[class*="st-key-delete_"] {
@@ -1547,17 +1536,27 @@ def render_main() -> None:
 
 def render_mobile_controls() -> None:
     with st.container(key="mobile_controls"):
-        control_cols = st.columns([0.56, 0.44], gap="small")
+        control_cols = st.columns([0.26, 0.39, 0.35], gap="small")
         with control_cols[0]:
+            with st.popover("新增", use_container_width=True):
+                with st.form("add_warrant_form_mobile", clear_on_submit=True):
+                    code = st.text_input("權證代號", placeholder="例如 030012", key="mobile_warrant_code").strip().upper()
+                    submitted = st.form_submit_button("新增並抓資料", use_container_width=True)
+                if submitted:
+                    try:
+                        add_or_update_warrant(code)
+                    except Exception as error:
+                        st.error(str(error))
+        with control_cols[1]:
             st.markdown(
                 '<div class="mobile-status">'
                 '<span>已儲存</span>'
                 f'<strong>{len(st.session_state["items"])}</strong>'
-                f'<small>最近更新 {html.escape(latest_update_text(st.session_state["items"]))}</small>'
+                f'<small>{html.escape(latest_update_text(st.session_state["items"]))}</small>'
                 "</div>",
                 unsafe_allow_html=True,
             )
-        with control_cols[1]:
+        with control_cols[2]:
             if st.button("更新價格", use_container_width=True, disabled=not st.session_state["items"], key="mobile_refresh_prices"):
                 try:
                     refresh_all_prices()
