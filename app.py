@@ -1239,6 +1239,14 @@ def inject_css() -> None:
           text-overflow: ellipsis;
           white-space: nowrap;
         }
+        .mobile-app-title {
+          color: var(--ink);
+          font-size: 1.18rem;
+          line-height: 1.05;
+          font-weight: 850;
+          margin-bottom: 0.44rem;
+          white-space: nowrap;
+        }
         .mobile-card-header {
           display: grid;
           grid-template-columns: minmax(0, 1fr) auto;
@@ -1264,10 +1272,7 @@ def inject_css() -> None:
           padding-right: 1.85rem;
         }
         .mobile-calc-output {
-          position: absolute;
-          top: 0.42rem;
-          right: 0.52rem;
-          width: 5.1rem;
+          min-width: 0;
         }
         .mobile-calc-output .calc-result-value {
           justify-content: flex-end;
@@ -1299,7 +1304,7 @@ def inject_css() -> None:
           div[class*="st-key-mobile_controls"] {
             display: block;
             margin: 0 0 0.48rem;
-            padding: 0.42rem 0.52rem;
+            padding: 0.54rem 0.58rem 0.48rem;
             border: 1px solid var(--line);
             border-radius: 8px;
             background: var(--surface);
@@ -1381,6 +1386,19 @@ def inject_css() -> None:
             background: var(--orange-soft);
             border-color: var(--orange-line);
           }
+          div[class*="st-key-mobile_calc_forward_"] div[data-testid="stHorizontalBlock"],
+          div[class*="st-key-mobile_calc_reverse_"] div[data-testid="stHorizontalBlock"] {
+            display: grid !important;
+            grid-template-columns: minmax(0, 1fr) 5.2rem !important;
+            gap: 0.42rem !important;
+            align-items: end !important;
+          }
+          div[class*="st-key-mobile_calc_forward_"] div[data-testid="stHorizontalBlock"] > div,
+          div[class*="st-key-mobile_calc_reverse_"] div[data-testid="stHorizontalBlock"] > div {
+            width: auto !important;
+            min-width: 0 !important;
+            flex: none !important;
+          }
           div[class*="st-key-mobile_calc_forward_"] label,
           div[class*="st-key-mobile_calc_reverse_"] label {
             height: 0.88rem;
@@ -1394,10 +1412,6 @@ def inject_css() -> None:
             line-height: 0.88rem;
             font-weight: 850;
             color: var(--muted) !important;
-          }
-          div[class*="st-key-mobile_calc_forward_"] div[data-testid="stTextInput"],
-          div[class*="st-key-mobile_calc_reverse_"] div[data-testid="stTextInput"] {
-            width: calc(100% - 5.75rem);
           }
           div[class*="st-key-mobile_calc_forward_"] input,
           div[class*="st-key-mobile_calc_reverse_"] input {
@@ -1413,19 +1427,31 @@ def inject_css() -> None:
             font-size: 0.93rem;
           }
           div[class*="st-key-mobile_actions_"] {
-            display: grid;
-            grid-template-columns: 1.32rem;
-            justify-content: center;
-            gap: 0.36rem;
-            padding: 0;
+            display: contents !important;
+          }
+          div[class*="st-key-mobile_actions_"] > div,
+          div[class*="st-key-mobile_actions_"] div[data-testid="stVerticalBlock"] {
+            display: contents !important;
+          }
+          div[class*="st-key-mobile_card_"] div[class*="st-key-mobile_action_up_"],
+          div[class*="st-key-mobile_card_"] div[class*="st-key-mobile_action_down_"],
+          div[class*="st-key-mobile_card_"] div[class*="st-key-mobile_delete_"] {
             position: absolute;
             right: 0.68rem;
-            top: 6.95rem;
-            z-index: 5;
+            z-index: 20;
           }
           div[class*="st-key-mobile_action_"],
           div[class*="st-key-mobile_delete_"] {
             height: 1.32rem;
+          }
+          div[class*="st-key-mobile_card_"] div[class*="st-key-mobile_action_up_"] {
+            top: 6.6rem;
+          }
+          div[class*="st-key-mobile_card_"] div[class*="st-key-mobile_action_down_"] {
+            top: 8.24rem;
+          }
+          div[class*="st-key-mobile_card_"] div[class*="st-key-mobile_delete_"] {
+            top: 9.88rem;
           }
           div[class*="st-key-mobile_action_"] button,
           div[class*="st-key-mobile_delete_"] button {
@@ -1568,10 +1594,12 @@ def render_mobile_warrant_card(item: dict[str, Any], index: int) -> None:
         )
 
         with st.container(key=f"mobile_calc_forward_{card_id}"):
+            inner = st.columns([1.0, 0.52], gap="small")
             spot_key = f"mobile_spot_text_{card_id}"
             if spot_key not in st.session_state:
                 st.session_state[spot_key] = format_input_number(item.get("testSpot", item.get("spot")))
-            test_spot_raw = st.text_input("股價", key=spot_key)
+            with inner[0]:
+                test_spot_raw = st.text_input("股價", key=spot_key)
             test_spot = to_number(test_spot_raw)
             if numbers_equal(test_spot, item.get("testSpot")):
                 simulated = item.get("simulatedPrice")
@@ -1588,16 +1616,19 @@ def render_mobile_warrant_card(item: dict[str, Any], index: int) -> None:
             if changed:
                 item["testSpot"] = test_spot
                 item["simulatedPrice"] = simulated
-            st.markdown(
-                '<div class="mobile-calc-output">' + calc_result_html("權證價格", simulated) + "</div>",
-                unsafe_allow_html=True,
-            )
+            with inner[1]:
+                st.markdown(
+                    '<div class="mobile-calc-output">' + calc_result_html("權證價格", simulated) + "</div>",
+                    unsafe_allow_html=True,
+                )
 
         with st.container(key=f"mobile_calc_reverse_{card_id}"):
+            inner = st.columns([1.0, 0.52], gap="small")
             target_key = f"mobile_target_text_{card_id}"
             if target_key not in st.session_state:
                 st.session_state[target_key] = format_input_number(item.get("targetPrice", item.get("marketReference")))
-            target_price_raw = st.text_input("權證價格", key=target_key)
+            with inner[0]:
+                target_price_raw = st.text_input("權證價格", key=target_key)
             target_price = to_number(target_price_raw)
             if numbers_equal(target_price, item.get("targetPrice")):
                 implied = item.get("impliedSpot")
@@ -1610,10 +1641,11 @@ def render_mobile_warrant_card(item: dict[str, Any], index: int) -> None:
                 item["targetPrice"] = target_price
                 item["impliedSpot"] = implied
                 changed = True
-            st.markdown(
-                '<div class="mobile-calc-output">' + calc_result_html("股價", implied) + "</div>",
-                unsafe_allow_html=True,
-            )
+            with inner[1]:
+                st.markdown(
+                    '<div class="mobile-calc-output">' + calc_result_html("股價", implied) + "</div>",
+                    unsafe_allow_html=True,
+                )
 
         with st.container(key=f"mobile_actions_{card_id}"):
             if st.button("▲", key=f"mobile_action_up_{card_id}", disabled=index == 0, help="上移"):
@@ -1677,6 +1709,7 @@ def render_main() -> None:
 
 def render_mobile_controls() -> None:
     with st.container(key="mobile_controls"):
+        st.markdown('<div class="mobile-app-title">Warrant Watch!</div>', unsafe_allow_html=True)
         control_cols = st.columns([0.26, 0.39, 0.35], gap="small")
         with control_cols[0]:
             with st.popover("新增", use_container_width=True):
