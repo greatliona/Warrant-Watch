@@ -31,7 +31,7 @@ YUANTA_WARRANT_DATA = "https://www.warrantwin.com.tw/eyuanta/ws/GetWarData.ashx"
 YUANTA_QUOTE = "https://www.warrantwin.com.tw/eyuanta/ws/Quote.ashx"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit local app"}
-APP_VERSION = "W1.0.2"
+APP_VERSION = "W1.0.2a"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
@@ -246,10 +246,16 @@ def fetch_yuanta_warrant(code: str) -> dict[str, Any] | None:
 
 
 @st.cache_data(ttl=15, show_spinner=False)
-def fetch_yuanta_quote_price(params: dict[str, str]) -> float | None:
+def fetch_yuanta_quote_calc(params: dict[str, str]) -> dict[str, Any] | None:
     endpoint = f"{YUANTA_QUOTE}?{urlencode(params)}"
     data = fetch_json(endpoint)
-    return to_number((data.get("calc") or {}).get("PriceTheory"))
+    calc = data.get("calc") if isinstance(data, dict) else None
+    return calc if isinstance(calc, dict) else None
+
+
+def fetch_yuanta_quote_price(params: dict[str, str]) -> float | None:
+    calc = fetch_yuanta_quote_calc(params)
+    return to_number((calc or {}).get("PriceTheory"))
 
 
 def choose_volatility(row: dict[str, Any] | None) -> dict[str, Any]:
@@ -433,7 +439,7 @@ def fetch_quote_with_fallback(code: str, preferred_market: str) -> dict[str, Any
     return None
 
 
-def fetch_yuanta_fair_price(info: dict[str, Any], yuanta: dict[str, Any] | None, spot: Any) -> float | None:
+def build_yuanta_calc_params(info: dict[str, Any], yuanta: dict[str, Any] | None, spot: Any) -> dict[str, str] | None:
     volatility = choose_volatility(yuanta)
     spot_value = to_number(spot)
     vol_value = to_number(volatility.get("value"))
@@ -446,7 +452,7 @@ def fetch_yuanta_fair_price(info: dict[str, Any], yuanta: dict[str, Any] | None,
         or info.get("lastTradingDate")
         or ""
     )
-    params = {
+    return {
         "type": "calc",
         "symbol": str(info.get("code") or ""),
         "war_type": "2" if info.get("warrantType") == "put" else "1",
@@ -461,6 +467,47 @@ def fetch_yuanta_fair_price(info: dict[str, Any], yuanta: dict[str, Any] | None,
         "ir": str((first_number(yuanta.get("FLD_RISK_RATE_FREE"), 1.5) or 1.5) / 100),
         "iv": str(vol_value / 100),
     }
+
+
+def build_yuanta_calc_params_from_item(item: dict[str, Any], spot: Any) -> dict[str, str] | None:
+    spot_value = to_number(spot)
+    if spot_value is None:
+        return None
+
+    params = dict(item.get("yuantaCalcParams") or {})
+    if not params:
+        quote = item.get("quote") or {}
+        params = {
+            "type": "calc",
+            "symbol": str(item.get("code") or ""),
+            "war_type": "2" if item.get("type") == "put" else "1",
+            "conver_rate": str(to_number(item.get("ratio")) or ""),
+            "bid_price": str(to_number(quote.get("bestBid")) or ""),
+            "ask_price": str(to_number(quote.get("bestAsk")) or ""),
+            "strike_price": str(to_number(item.get("strike")) or ""),
+            "hist_vol": str(to_number(item.get("historyVolatility")) or to_number(item.get("volatility")) or ""),
+            "date_s": iso_to_compact(today_iso()),
+            "date_e": iso_to_compact(item.get("expiry")),
+            "ir": str(to_number(item.get("riskFreeRate")) or 0.015),
+            "iv": str(to_number(item.get("volatility")) or ""),
+        }
+    params["udly_price"] = str(spot_value)
+    if not params.get("symbol") or not params.get("conver_rate") or not params.get("strike_price") or not params.get("date_e"):
+        return None
+    return params
+
+
+def fetch_yuanta_fair_price(info: dict[str, Any], yuanta: dict[str, Any] | None, spot: Any) -> float | None:
+    params = build_yuanta_calc_params(info, yuanta, spot)
+    if not params:
+        return None
+    return fetch_yuanta_quote_price(params)
+
+
+def fetch_yuanta_price_for_item(item: dict[str, Any], spot: Any) -> float | None:
+    params = build_yuanta_calc_params_from_item(item, spot)
+    if not params:
+        return None
     return fetch_yuanta_quote_price(params)
 
 
@@ -589,7 +636,7 @@ def implied_spot_from_price(item: dict[str, Any], target_price: Any) -> float | 
     high = max(strike, spot, 1) * 2
 
     def price_at(value: float) -> float:
-        return model_price(item, value) or 0
+        return fair_price_for_spot(item, value) or 0
 
     if is_put:
         while price_at(low) < target and low > 0.000001:
@@ -598,7 +645,7 @@ def implied_spot_from_price(item: dict[str, Any], target_price: Any) -> float | 
             high *= 2
         if price_at(low) < target or price_at(high) > target:
             return None
-        for _ in range(64):
+        for _ in range(18):
             mid = (low + high) / 2
             if price_at(mid) > target:
                 low = mid
@@ -610,7 +657,7 @@ def implied_spot_from_price(item: dict[str, Any], target_price: Any) -> float | 
         high *= 2
     if price_at(low) > target or price_at(high) < target:
         return None
-    for _ in range(64):
+    for _ in range(18):
         mid = (low + high) / 2
         if price_at(mid) < target:
             low = mid
@@ -665,8 +712,9 @@ def load_warrant(code: str, existing: dict[str, Any] | None = None) -> dict[str,
         "historyVolatility": to_number((yuanta or {}).get("FLD_HISTORY_VOLATILITY_3M")),
         "expiryDate": info.get("exerciseEndDate") or info.get("lastTradingDate") or "",
     }
+    yuanta_calc_params = build_yuanta_calc_params(info, yuanta, underlying_price)
     try:
-        fair_from_yuanta = fetch_yuanta_fair_price(info, yuanta, underlying_price)
+        fair_from_yuanta = fetch_yuanta_quote_price(yuanta_calc_params) if yuanta_calc_params else None
     except Exception:
         fair_from_yuanta = None
 
@@ -688,8 +736,10 @@ def load_warrant(code: str, existing: dict[str, Any] | None = None) -> dict[str,
         "marketReference": market_reference,
         "volatility": (first_number(pricing["volatility"], 45) or 45) / 100,
         "volatilitySource": pricing.get("volatilitySource") or "波動率",
+        "historyVolatility": (pricing.get("historyVolatility") / 100) if pricing.get("historyVolatility") else None,
         "riskFreeRate": (first_number(pricing["riskFreeRate"], 1.5) or 1.5) / 100,
         "evaluationDate": pricing.get("evaluationDate") or "",
+        "yuantaCalcParams": yuanta_calc_params or {},
         "testSpot": "",
         "targetPrice": "",
         "updatedAt": int(time.time() * 1000),
@@ -697,6 +747,7 @@ def load_warrant(code: str, existing: dict[str, Any] | None = None) -> dict[str,
     }
     fallback_fair = option_price(item, spot, item["volatility"])
     item["fairPrice"] = fair_from_yuanta if fair_from_yuanta is not None else fallback_fair
+    item["fairPriceSource"] = "元大合理價" if fair_from_yuanta is not None else "本機估算"
     calibrated_volatility = calibrate_pricing_volatility(item, spot, item["fairPrice"])
     item["pricingVolatility"] = calibrated_volatility if calibrated_volatility is not None else item["volatility"]
     item["simulatedPrice"] = None
@@ -708,7 +759,11 @@ def fair_price_for_spot(item: dict[str, Any], spot: Any) -> float | None:
     spot_value = to_number(spot)
     if spot_value is None:
         return None
-    return model_price(item, spot_value)
+    try:
+        yuanta_price = fetch_yuanta_price_for_item(item, spot_value)
+    except Exception:
+        yuanta_price = None
+    return yuanta_price if yuanta_price is not None else model_price(item, spot_value)
 
 
 def read_saved_items() -> list[dict[str, Any]]:
@@ -920,6 +975,7 @@ def detail_html(item: dict[str, Any]) -> str:
         ("換股比例", format_number(item.get("ratio"), 4)),
         ("到期日", item.get("expiry") or "--"),
         ("評價日", item.get("evaluationDate") or "--"),
+        ("合理價來源", item.get("fairPriceSource") or "--"),
         ("波動率", f"{item.get('volatilitySource') or '波動率'} {format_number((to_number(item.get('volatility')) or 0) * 100)}%"),
         ("利率", f"{format_number((to_number(item.get('riskFreeRate')) or 0) * 100)}%"),
         ("委買/委賣", f"{format_number(quote.get('bestBid'))} / {format_number(quote.get('bestAsk'))}"),
@@ -1931,6 +1987,7 @@ def render_details(item: dict[str, Any]) -> None:
     detail_line("換股比例", format_number(item.get("ratio"), 4))
     detail_line("到期日", item.get("expiry") or "--")
     detail_line("評價日", item.get("evaluationDate") or "--")
+    detail_line("合理價來源", item.get("fairPriceSource") or "--")
     detail_line("波動率", f"{item.get('volatilitySource') or '波動率'} {format_number((to_number(item.get('volatility')) or 0) * 100)}%")
     detail_line("利率", f"{format_number((to_number(item.get('riskFreeRate')) or 0) * 100)}%")
     detail_line("委買/委賣", f"{format_number(quote.get('bestBid'))} / {format_number(quote.get('bestAsk'))}")
