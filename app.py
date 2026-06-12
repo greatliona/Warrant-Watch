@@ -1207,24 +1207,30 @@ def inject_css() -> None:
           font-size: 0.8rem;
           line-height: 1.2;
         }
-        .mobile-title-row {
+        .mobile-status {
           display: flex;
           align-items: baseline;
-          justify-content: space-between;
-          gap: 0.75rem;
-          margin-bottom: 0.5rem;
+          gap: 0.42rem;
+          min-width: 0;
         }
-        .mobile-title-row strong {
-          color: var(--ink);
-          font-size: 1.04rem;
-          line-height: 1.1;
-          font-weight: 850;
+        .mobile-status span {
+          color: var(--muted);
+          font-size: 0.74rem;
+          line-height: 1.05;
           white-space: nowrap;
         }
-        .mobile-title-row span {
-          color: var(--muted);
-          font-size: 0.72rem;
-          line-height: 1.1;
+        .mobile-status strong {
+          color: var(--ink);
+          font-size: 1.15rem;
+          line-height: 1;
+          font-weight: 850;
+        }
+        .mobile-status small {
+          color: var(--faint);
+          font-size: 0.66rem;
+          line-height: 1;
+          overflow: hidden;
+          text-overflow: ellipsis;
           white-space: nowrap;
         }
         .empty-state {
@@ -1238,61 +1244,89 @@ def inject_css() -> None:
         @media (max-width: 900px) {
           header[data-testid="stHeader"] {
             background: var(--bg);
+            height: 2.8rem;
           }
           div[data-testid="collapsedControl"] {
             display: flex !important;
             visibility: visible !important;
             opacity: 1 !important;
             z-index: 999999 !important;
+            position: fixed !important;
+            top: 0.46rem !important;
+            left: 0.5rem !important;
           }
           div[data-testid="collapsedControl"] button {
             background: var(--surface-soft) !important;
             border: 1px solid var(--line) !important;
             color: var(--ink) !important;
             border-radius: 8px !important;
+            width: 2rem !important;
+            height: 2rem !important;
           }
           .main .block-container {
-            padding: 0.55rem 0.45rem 1rem;
+            padding: 2.9rem 0.45rem 1rem;
           }
           div[class*="st-key-mobile_controls"] {
             display: block;
-            margin: 0 0 0.55rem;
-            padding: 0.58rem 0.65rem 0.62rem;
+            margin: 0 0 0.48rem;
+            padding: 0.42rem 0.52rem;
             border: 1px solid var(--line);
             border-radius: 8px;
             background: var(--surface);
           }
           div[class*="st-key-mobile_controls"] div[data-testid="stVerticalBlock"] {
-            gap: 0.34rem;
+            gap: 0.2rem;
           }
-          div[class*="st-key-mobile_controls"] div[data-testid="stForm"] {
-            border: 0;
-            padding: 0;
+          div[class*="st-key-mobile_controls"] div[data-testid="stHorizontalBlock"] {
+            display: grid !important;
+            grid-template-columns: minmax(0, 1fr) 7.6rem !important;
+            gap: 0.5rem !important;
+            align-items: center !important;
           }
-          div[class*="st-key-mobile_controls"] [data-testid="stMetric"] {
-            background: transparent;
+          div[class*="st-key-mobile_controls"] div[data-testid="stHorizontalBlock"] > div {
+            width: auto !important;
+            min-width: 0 !important;
+            flex: none !important;
           }
-          div[class*="st-key-mobile_controls"] [data-testid="stMetricValue"] {
-            font-size: 1.28rem;
+          div[class*="st-key-mobile_controls"] .stButton > button {
+            min-height: 1.9rem;
+            height: 1.9rem;
+            padding: 0 0.62rem;
+            font-size: 0.82rem;
           }
           div[class*="st-key-card_"] {
             margin-bottom: 0.54rem;
           }
           div[class*="st-key-card_"] > div {
-            padding: 0.62rem 0.66rem !important;
+            padding: 0.58rem 0.58rem !important;
+          }
+          div[class*="st-key-card_"] > div > div[data-testid="stVerticalBlock"] > div[data-testid="stHorizontalBlock"],
+          div[class*="st-key-card_"] > div > div > div[data-testid="stVerticalBlock"] > div[data-testid="stHorizontalBlock"] {
+            display: grid !important;
+            grid-template-columns: minmax(0, 1fr) 1.55rem !important;
+            gap: 0.45rem !important;
+            align-items: stretch !important;
+          }
+          div[class*="st-key-card_"] > div > div[data-testid="stVerticalBlock"] > div[data-testid="stHorizontalBlock"] > div,
+          div[class*="st-key-card_"] > div > div > div[data-testid="stVerticalBlock"] > div[data-testid="stHorizontalBlock"] > div {
+            width: auto !important;
+            min-width: 0 !important;
+            flex: none !important;
           }
           .card-header-grid {
-            grid-template-columns: minmax(96px, 1fr) 2.05rem 3.12rem 4.8rem;
-            gap: 0.18rem 0.38rem;
-            min-height: 2.3rem;
-            margin-bottom: 0.52rem;
+            grid-template-columns: minmax(0, 1fr) 2rem 3.25rem 3.25rem 4.75rem;
+            gap: 0.2rem 0.36rem;
+            min-height: 2.2rem;
+            margin-bottom: 0.46rem;
+            align-items: start;
           }
           .card-title-cell {
             gap: 0.25rem;
+            grid-column: 1 / span 2;
           }
           .warrant-title {
-            font-size: 0.86rem;
-            line-height: 1.16;
+            font-size: 0.92rem;
+            line-height: 1.15;
           }
           .native-detail-popover summary {
             width: 1.38rem;
@@ -1307,14 +1341,17 @@ def inject_css() -> None:
           }
           div[class*="st-key-calc_forward_"],
           div[class*="st-key-calc_reverse_"] {
-            min-height: 3.75rem;
+            min-height: 3.45rem;
             padding: 0.42rem 0.46rem 0.36rem;
+          }
+          div[class*="st-key-calc_forward_"] {
+            margin-bottom: 0.44rem;
           }
           div[class*="st-key-calc_forward_"] div[data-testid="stHorizontalBlock"],
           div[class*="st-key-calc_reverse_"] div[data-testid="stHorizontalBlock"] {
             display: grid !important;
-            grid-template-columns: minmax(0, 1fr) minmax(5.1rem, 0.74fr) !important;
-            gap: 0.48rem !important;
+            grid-template-columns: minmax(0, 1fr) 5.35rem !important;
+            gap: 0.42rem !important;
             align-items: end !important;
           }
           div[class*="st-key-calc_forward_"] div[data-testid="stHorizontalBlock"] > div,
@@ -1350,22 +1387,23 @@ def inject_css() -> None:
           }
           .card-actions {
             display: grid;
-            grid-template-columns: repeat(3, 1.38rem);
-            justify-content: flex-end;
+            grid-template-columns: 1.32rem;
+            justify-content: center;
             align-content: center;
-            gap: 0.34rem;
-            padding: 0.34rem 0.04rem 0 0;
+            gap: 0.36rem;
+            padding: 3.45rem 0 0;
           }
           div[class*="st-key-card_action_"],
           div[class*="st-key-delete_"] {
-            height: 1.38rem;
+            height: 1.32rem;
           }
           div[class*="st-key-card_action_"] button,
           div[class*="st-key-delete_"] button {
-            width: 1.38rem;
-            min-width: 1.38rem;
-            min-height: 1.38rem;
-            height: 1.38rem;
+            width: 1.32rem;
+            min-width: 1.32rem;
+            min-height: 1.32rem;
+            height: 1.32rem;
+            font-size: 0.62rem;
           }
         }
         @media (min-width: 901px) {
@@ -1509,32 +1547,22 @@ def render_main() -> None:
 
 def render_mobile_controls() -> None:
     with st.container(key="mobile_controls"):
-        st.markdown(
-            f'<div class="mobile-title-row"><strong>Warrant Watch!</strong><span>評價日期: {today_compact()}</span></div>',
-            unsafe_allow_html=True,
-        )
-        with st.form("add_warrant_form_mobile", clear_on_submit=True):
-            code = st.text_input("權證代號", placeholder="例如 030012", key="mobile_warrant_code").strip().upper()
-            submitted = st.form_submit_button("新增並抓資料", use_container_width=True)
-        if submitted:
-            try:
-                add_or_update_warrant(code)
-            except Exception as error:
-                st.error(str(error))
-
-        control_cols = st.columns([0.36, 0.64], gap="small")
+        control_cols = st.columns([0.56, 0.44], gap="small")
         with control_cols[0]:
-            st.metric("已儲存", len(st.session_state["items"]))
+            st.markdown(
+                '<div class="mobile-status">'
+                '<span>已儲存</span>'
+                f'<strong>{len(st.session_state["items"])}</strong>'
+                f'<small>最近更新 {html.escape(latest_update_text(st.session_state["items"]))}</small>'
+                "</div>",
+                unsafe_allow_html=True,
+            )
         with control_cols[1]:
             if st.button("更新價格", use_container_width=True, disabled=not st.session_state["items"], key="mobile_refresh_prices"):
                 try:
                     refresh_all_prices()
                 except Exception as error:
                     st.error(str(error))
-            st.markdown(
-                f'<div class="sidebar-update-time">最近更新 {html.escape(latest_update_text(st.session_state["items"]))}</div>',
-                unsafe_allow_html=True,
-            )
 
 
 def render_sidebar() -> None:
