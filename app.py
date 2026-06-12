@@ -984,6 +984,9 @@ def inject_css() -> None:
           border-color: var(--line) !important;
           background: var(--surface) !important;
         }
+        div[class*="st-key-mobile_controls"] {
+          display: none;
+        }
         div[class*="st-key-calc_forward_"],
         div[class*="st-key-calc_reverse_"] {
           border-radius: 8px;
@@ -1204,6 +1207,26 @@ def inject_css() -> None:
           font-size: 0.8rem;
           line-height: 1.2;
         }
+        .mobile-title-row {
+          display: flex;
+          align-items: baseline;
+          justify-content: space-between;
+          gap: 0.75rem;
+          margin-bottom: 0.5rem;
+        }
+        .mobile-title-row strong {
+          color: var(--ink);
+          font-size: 1.04rem;
+          line-height: 1.1;
+          font-weight: 850;
+          white-space: nowrap;
+        }
+        .mobile-title-row span {
+          color: var(--muted);
+          font-size: 0.72rem;
+          line-height: 1.1;
+          white-space: nowrap;
+        }
         .empty-state {
           border: 1px dashed var(--line);
           border-radius: 8px;
@@ -1213,7 +1236,142 @@ def inject_css() -> None:
           text-align: center;
         }
         @media (max-width: 900px) {
-          .main .block-container { padding-left: 0.75rem; padding-right: 0.75rem; }
+          header[data-testid="stHeader"] {
+            background: var(--bg);
+          }
+          div[data-testid="collapsedControl"] {
+            display: flex !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+            z-index: 999999 !important;
+          }
+          div[data-testid="collapsedControl"] button {
+            background: var(--surface-soft) !important;
+            border: 1px solid var(--line) !important;
+            color: var(--ink) !important;
+            border-radius: 8px !important;
+          }
+          .main .block-container {
+            padding: 0.55rem 0.45rem 1rem;
+          }
+          div[class*="st-key-mobile_controls"] {
+            display: block;
+            margin: 0 0 0.55rem;
+            padding: 0.58rem 0.65rem 0.62rem;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: var(--surface);
+          }
+          div[class*="st-key-mobile_controls"] div[data-testid="stVerticalBlock"] {
+            gap: 0.34rem;
+          }
+          div[class*="st-key-mobile_controls"] div[data-testid="stForm"] {
+            border: 0;
+            padding: 0;
+          }
+          div[class*="st-key-mobile_controls"] [data-testid="stMetric"] {
+            background: transparent;
+          }
+          div[class*="st-key-mobile_controls"] [data-testid="stMetricValue"] {
+            font-size: 1.28rem;
+          }
+          div[class*="st-key-card_"] {
+            margin-bottom: 0.54rem;
+          }
+          div[class*="st-key-card_"] > div {
+            padding: 0.62rem 0.66rem !important;
+          }
+          .card-header-grid {
+            grid-template-columns: minmax(96px, 1fr) 2.05rem 3.12rem 4.8rem;
+            gap: 0.18rem 0.38rem;
+            min-height: 2.3rem;
+            margin-bottom: 0.52rem;
+          }
+          .card-title-cell {
+            gap: 0.25rem;
+          }
+          .warrant-title {
+            font-size: 0.86rem;
+            line-height: 1.16;
+          }
+          .native-detail-popover summary {
+            width: 1.38rem;
+            height: 1.38rem;
+            font-size: 0.9rem;
+          }
+          .metric-label {
+            font-size: 0.66rem;
+          }
+          .metric-value {
+            font-size: 0.9rem;
+          }
+          div[class*="st-key-calc_forward_"],
+          div[class*="st-key-calc_reverse_"] {
+            min-height: 3.75rem;
+            padding: 0.42rem 0.46rem 0.36rem;
+          }
+          div[class*="st-key-calc_forward_"] div[data-testid="stHorizontalBlock"],
+          div[class*="st-key-calc_reverse_"] div[data-testid="stHorizontalBlock"] {
+            display: grid !important;
+            grid-template-columns: minmax(0, 1fr) minmax(5.1rem, 0.74fr) !important;
+            gap: 0.48rem !important;
+            align-items: end !important;
+          }
+          div[class*="st-key-calc_forward_"] div[data-testid="stHorizontalBlock"] > div,
+          div[class*="st-key-calc_reverse_"] div[data-testid="stHorizontalBlock"] > div {
+            width: auto !important;
+            min-width: 0 !important;
+            flex: none !important;
+          }
+          div[class*="st-key-calc_forward_"] label,
+          div[class*="st-key-calc_reverse_"] label {
+            height: 0.88rem;
+            min-height: 0.88rem;
+            margin-bottom: 0.2rem !important;
+          }
+          div[class*="st-key-calc_forward_"] label p,
+          div[class*="st-key-calc_reverse_"] label p,
+          .calc-result-label {
+            font-size: 0.72rem;
+            line-height: 0.88rem;
+          }
+          div[data-testid="stNumberInput"] input,
+          div[data-testid="stTextInput"] input {
+            min-height: 1.88rem;
+            height: 1.88rem;
+          }
+          .calc-result {
+            grid-template-rows: 0.88rem 1.88rem;
+            gap: 0.2rem;
+          }
+          .calc-result-value {
+            min-height: 1.88rem;
+            font-size: 0.93rem;
+          }
+          .card-actions {
+            display: grid;
+            grid-template-columns: repeat(3, 1.38rem);
+            justify-content: flex-end;
+            align-content: center;
+            gap: 0.34rem;
+            padding: 0.34rem 0.04rem 0 0;
+          }
+          div[class*="st-key-card_action_"],
+          div[class*="st-key-delete_"] {
+            height: 1.38rem;
+          }
+          div[class*="st-key-card_action_"] button,
+          div[class*="st-key-delete_"] button {
+            width: 1.38rem;
+            min-width: 1.38rem;
+            min-height: 1.38rem;
+            height: 1.38rem;
+          }
+        }
+        @media (min-width: 901px) {
+          div[class*="st-key-mobile_controls"] {
+            display: none !important;
+          }
         }
         </style>
         """,
@@ -1349,6 +1507,36 @@ def render_main() -> None:
                 render_warrant_card(st.session_state["items"][item_index], item_index)
 
 
+def render_mobile_controls() -> None:
+    with st.container(key="mobile_controls"):
+        st.markdown(
+            f'<div class="mobile-title-row"><strong>Warrant Watch!</strong><span>評價日期: {today_compact()}</span></div>',
+            unsafe_allow_html=True,
+        )
+        with st.form("add_warrant_form_mobile", clear_on_submit=True):
+            code = st.text_input("權證代號", placeholder="例如 030012", key="mobile_warrant_code").strip().upper()
+            submitted = st.form_submit_button("新增並抓資料", use_container_width=True)
+        if submitted:
+            try:
+                add_or_update_warrant(code)
+            except Exception as error:
+                st.error(str(error))
+
+        control_cols = st.columns([0.36, 0.64], gap="small")
+        with control_cols[0]:
+            st.metric("已儲存", len(st.session_state["items"]))
+        with control_cols[1]:
+            if st.button("更新價格", use_container_width=True, disabled=not st.session_state["items"], key="mobile_refresh_prices"):
+                try:
+                    refresh_all_prices()
+                except Exception as error:
+                    st.error(str(error))
+            st.markdown(
+                f'<div class="sidebar-update-time">最近更新 {html.escape(latest_update_text(st.session_state["items"]))}</div>',
+                unsafe_allow_html=True,
+            )
+
+
 def render_sidebar() -> None:
     with st.sidebar:
         st.title("Warrant Watch!")
@@ -1381,6 +1569,7 @@ def main() -> None:
     if "items" not in st.session_state:
         st.session_state["items"] = read_saved_items()
     render_sidebar()
+    render_mobile_controls()
     render_main()
 
 
