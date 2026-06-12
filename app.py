@@ -987,6 +987,9 @@ def inject_css() -> None:
         div[class*="st-key-mobile_controls"] {
           display: none;
         }
+        div[class*="st-key-mobile_title_bar"] {
+          display: none;
+        }
         div[class*="st-key-mobile_watchlist"] {
           display: none;
         }
@@ -1241,10 +1244,10 @@ def inject_css() -> None:
         }
         .mobile-app-title {
           color: var(--ink);
-          font-size: 1.18rem;
+          font-size: 1.34rem;
           line-height: 1.05;
           font-weight: 850;
-          margin-bottom: 0.44rem;
+          margin: 0 0 0.5rem 0.12rem;
           white-space: nowrap;
         }
         .mobile-card-header {
@@ -1309,6 +1312,9 @@ def inject_css() -> None:
             border-radius: 8px;
             background: var(--surface);
           }
+          div[class*="st-key-mobile_title_bar"] {
+            display: block;
+          }
           div[class*="st-key-mobile_controls"] div[data-testid="stVerticalBlock"] {
             gap: 0.2rem;
           }
@@ -1340,9 +1346,6 @@ def inject_css() -> None:
           div[class*="st-key-mobile_controls"] button[data-testid="stPopoverButton"] p {
             font-size: 0.82rem;
             line-height: 1;
-          }
-          .mobile-app-title {
-            display: none;
           }
           div[class*="st-key-card_"] {
             margin-bottom: 0.54rem;
@@ -1411,7 +1414,7 @@ def inject_css() -> None:
             display: grid !important;
             grid-template-columns: minmax(4.2rem, 0.95fr) minmax(4.05rem, 1.05fr) !important;
             gap: 0.3rem !important;
-            align-items: end !important;
+            align-items: start !important;
           }
           div[class*="st-key-mobile_calc_forward_"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"],
           div[class*="st-key-mobile_calc_reverse_"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
@@ -1442,8 +1445,10 @@ def inject_css() -> None:
             font-size: 0.84rem;
           }
           .calc-result {
-            grid-template-rows: 0.88rem 1.88rem;
+            grid-template-rows: 0.88rem 1.74rem;
             gap: 0.08rem;
+            align-content: start;
+            height: 100%;
           }
           .calc-result-value {
             min-height: 1.74rem;
@@ -1762,8 +1767,10 @@ def render_main() -> None:
 
 
 def render_mobile_controls() -> None:
-    with st.container(key="mobile_controls"):
+    with st.container(key="mobile_title_bar"):
         st.markdown('<div class="mobile-app-title">Warrant Watch!</div>', unsafe_allow_html=True)
+
+    with st.container(key="mobile_controls"):
         control_cols = st.columns([0.26, 0.39, 0.35], gap="small")
         with control_cols[0]:
             with st.popover("新增", use_container_width=True):
