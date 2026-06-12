@@ -77,12 +77,12 @@
     "volatilitySource": "元大造市委買波動率",
     "riskFreeRate": 0.017,
     "evaluationDate": "2026-06-12",
-    "testSpot": 2350,
-    "targetPrice": 5.1,
+    "testSpot": "",
+    "targetPrice": "",
     "updatedAt": 1781194723633,
     "fairPrice": 4.62,
-    "simulatedPrice": 5,
-    "impliedSpot": 2365.4163566400266
+    "simulatedPrice": null,
+    "impliedSpot": null
   },
   {
     "id": "3ebc2f38-0da1-43cb-9038-0ea16cc59b8d",
@@ -162,12 +162,12 @@
     "volatilitySource": "賣價隱波",
     "riskFreeRate": 0.017,
     "evaluationDate": "2026-06-12",
-    "testSpot": 2350,
-    "targetPrice": 5.3,
+    "testSpot": "",
+    "targetPrice": "",
     "updatedAt": 1781194723731,
     "fairPrice": 5.25,
-    "simulatedPrice": 5.55,
-    "impliedSpot": 1983.0578703435708
+    "simulatedPrice": null,
+    "impliedSpot": null
   },
   {
     "id": "93c9f16a-79af-479f-8037-fd0765847a02",
@@ -249,12 +249,12 @@
     "volatilitySource": "元大造市委買波動率",
     "riskFreeRate": 0.017,
     "evaluationDate": "2026-06-12",
-    "testSpot": 2400,
-    "targetPrice": 0.95,
+    "testSpot": "",
+    "targetPrice": "",
     "updatedAt": 1781194723838,
     "fairPrice": 0.82,
-    "simulatedPrice": 0.95,
-    "impliedSpot": 2015.1599808829437
+    "simulatedPrice": null,
+    "impliedSpot": null
   },
   {
     "id": "764aee75-c7d7-4906-9995-2f1828f24988",
@@ -334,12 +334,12 @@
     "volatilitySource": "買價隱波",
     "riskFreeRate": 0.017,
     "evaluationDate": "2026-06-12",
-    "testSpot": 2400,
-    "targetPrice": 3.38,
+    "testSpot": "",
+    "targetPrice": "",
     "updatedAt": 1781194723943,
     "fairPrice": 3.37,
-    "simulatedPrice": 3.84,
-    "impliedSpot": 2000.8014709028917
+    "simulatedPrice": null,
+    "impliedSpot": null
   },
   {
     "id": "46ca274b-a0ec-43e5-8296-3592e395d1d0",
@@ -419,12 +419,12 @@
     "volatilitySource": "三個月歷史波動率",
     "riskFreeRate": 0.017,
     "evaluationDate": "2026-06-12",
-    "testSpot": 2395,
-    "targetPrice": 16.5,
+    "testSpot": "",
+    "targetPrice": "",
     "updatedAt": 1781194724130,
     "fairPrice": 13.9,
-    "simulatedPrice": 16.6,
-    "impliedSpot": 2376.7106427972085
+    "simulatedPrice": null,
+    "impliedSpot": null
   },
   {
     "id": "bf067d8b-3f02-480a-a544-5e1695c59552",
@@ -508,12 +508,12 @@
     "volatilitySource": "元大造市委買波動率",
     "riskFreeRate": 0.017,
     "evaluationDate": "2026-06-12",
-    "testSpot": 2135,
-    "targetPrice": 4.35,
+    "testSpot": "",
+    "targetPrice": "",
     "updatedAt": 1781194724235,
     "fairPrice": 4.55,
-    "simulatedPrice": 4.24,
-    "impliedSpot": 1935.4389961761417
+    "simulatedPrice": null,
+    "impliedSpot": null
   },
   {
     "id": "5f9de624-9a84-4e4a-adbc-affb36680324",
@@ -594,12 +594,12 @@
     "volatilitySource": "買價隱波",
     "riskFreeRate": 0.017,
     "evaluationDate": "2026-06-12",
-    "testSpot": 360,
-    "targetPrice": 2.91,
+    "testSpot": "",
+    "targetPrice": "",
     "updatedAt": 1781194724344,
     "fairPrice": 2.97,
-    "simulatedPrice": 3.41,
-    "impliedSpot": 295.1168575405494
+    "simulatedPrice": null,
+    "impliedSpot": null
   },
   {
     "id": "59b44196-7aa2-45dd-86ad-f5afb20a3722",
@@ -680,12 +680,12 @@
     "volatilitySource": "買價隱波",
     "riskFreeRate": 0.017,
     "evaluationDate": "2026-06-12",
-    "testSpot": 22,
-    "targetPrice": 3.76,
+    "testSpot": "",
+    "targetPrice": "",
     "updatedAt": 1781194724450,
     "fairPrice": 3.9,
-    "simulatedPrice": 0,
-    "impliedSpot": 312.40905250767094
+    "simulatedPrice": null,
+    "impliedSpot": null
   },
   {
     "id": "dede95c7-b5f7-411b-b104-520a0e17edda",
@@ -765,12 +765,12 @@
     "volatilitySource": "賣價隱波",
     "riskFreeRate": 0.017,
     "evaluationDate": "2026-06-12",
-    "testSpot": 628,
-    "targetPrice": 7.1,
+    "testSpot": "",
+    "targetPrice": "",
     "updatedAt": 1781194724638,
     "fairPrice": 7.35,
-    "simulatedPrice": 7.45,
-    "impliedSpot": 547.3606249538841
+    "simulatedPrice": null,
+    "impliedSpot": null
   },
   {
     "id": "d06ab143-f56d-4e10-a3ec-37f0b534606e",
@@ -851,12 +851,12 @@
     "volatilitySource": "買價隱波",
     "riskFreeRate": 0.017,
     "evaluationDate": "2026-06-12",
-    "testSpot": 317.5,
-    "targetPrice": 5.55,
+    "testSpot": "",
+    "targetPrice": "",
     "updatedAt": 1781194724739,
     "fairPrice": 5.3,
-    "simulatedPrice": 5.3,
-    "impliedSpot": 285.3015139220196
+    "simulatedPrice": null,
+    "impliedSpot": null
   },
   {
     "id": "bc463977-6f65-4e04-85b3-972b1a7a190f",
@@ -937,12 +937,12 @@
     "volatilitySource": "買價隱波",
     "riskFreeRate": 0.017,
     "evaluationDate": "2026-06-12",
-    "testSpot": 213.5,
-    "targetPrice": 6.2,
+    "testSpot": "",
+    "targetPrice": "",
     "updatedAt": 1781194724840,
     "fairPrice": 6.15,
-    "simulatedPrice": 5.85,
-    "impliedSpot": 198.6649760241266
+    "simulatedPrice": null,
+    "impliedSpot": null
   },
   {
     "id": "2f206e5b-68c7-4960-9e24-ceaee7ccdef4",
@@ -1025,11 +1025,11 @@
     "volatilitySource": "買價隱波",
     "riskFreeRate": 0.017,
     "evaluationDate": "2026-06-12",
-    "testSpot": 144.5,
-    "targetPrice": 1.3900000000000001,
+    "testSpot": "",
+    "targetPrice": "",
     "updatedAt": 1781194729386,
     "fairPrice": 1.31,
-    "simulatedPrice": 1.29,
-    "impliedSpot": 129.92214293429095
+    "simulatedPrice": null,
+    "impliedSpot": null
   }
 ]

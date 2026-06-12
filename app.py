@@ -29,6 +29,9 @@ YUANTA_WARRANT_DATA = "https://www.warrantwin.com.tw/eyuanta/ws/GetWarData.ashx"
 YUANTA_QUOTE = "https://www.warrantwin.com.tw/eyuanta/ws/Quote.ashx"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit local app"}
+BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
+CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
+CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
 
 
 class WarrantError(Exception):
@@ -145,17 +148,17 @@ def first_number(*values: Any) -> float | None:
     return None
 
 
-@st.cache_data(ttl=600, show_spinner=False)
+@st.cache_data(ttl=BASIC_DATA_TTL_SECONDS, show_spinner=False)
 def fetch_twse_warrants() -> list[dict[str, Any]]:
     return fetch_json(TWSE_WARRANTS)
 
 
-@st.cache_data(ttl=600, show_spinner=False)
+@st.cache_data(ttl=BASIC_DATA_TTL_SECONDS, show_spinner=False)
 def fetch_tpex_warrants() -> list[dict[str, Any]]:
     return fetch_json(TPEX_WARRANTS)
 
 
-@st.cache_data(ttl=600, show_spinner=False)
+@st.cache_data(ttl=BASIC_DATA_TTL_SECONDS, show_spinner=False)
 def fetch_twse_symbols() -> list[dict[str, Any]]:
     return fetch_json(TWSE_SYMBOLS)
 
@@ -313,6 +316,54 @@ def find_warrant_info(code: str) -> dict[str, Any] | None:
         "lastTradingDate": roc_date_to_iso(row.get("最後交易日")),
         "exerciseEndDate": roc_date_to_iso(row.get("履約截止日")),
         "sourceDate": roc_date_to_iso(row.get("出表日期")),
+    }
+
+
+def info_from_existing_item(code: str, existing: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not existing:
+        return None
+
+    strike = to_number(existing.get("strike"))
+    ratio = to_number(existing.get("ratio"))
+    expiry = str(existing.get("expiry") or "").strip()
+    if strike is None or ratio is None or not expiry:
+        return None
+
+    quote = existing.get("quote") or {}
+    underlying_quote = existing.get("underlyingQuote") or {}
+    underlying_code = (
+        existing.get("underlyingCode")
+        or quote.get("relatedCode")
+        or underlying_quote.get("code")
+        or ""
+    )
+    underlying_name = (
+        existing.get("underlyingName")
+        or quote.get("relatedName")
+        or underlying_quote.get("name")
+        or ""
+    )
+    warrant_market = quote.get("market") or "tse"
+    underlying_market = underlying_quote.get("market") or quote.get("market") or warrant_market
+
+    return {
+        "code": existing.get("code") or code,
+        "name": existing.get("name") or "",
+        "warrantType": existing.get("type") or "call",
+        "category": "",
+        "quoteStyle": "",
+        "settlement": "",
+        "underlyingName": underlying_name,
+        "underlyingCode": underlying_code,
+        "underlyingMarket": underlying_market,
+        "warrantMarket": warrant_market,
+        "strike": strike,
+        "ratio": ratio,
+        "sharesPerThousand": ratio * 1000,
+        "startDate": "",
+        "lastTradingDate": expiry,
+        "exerciseEndDate": expiry,
+        "sourceDate": "",
     }
 
 
@@ -546,7 +597,7 @@ def load_warrant(code: str, existing: dict[str, Any] | None = None) -> dict[str,
     if not re.fullmatch(r"[0-9A-Z]+", normalized):
         raise WarrantError("請輸入有效權證代號")
 
-    info = find_warrant_info(normalized)
+    info = info_from_existing_item(normalized, existing) or find_warrant_info(normalized)
     if not info:
         raise WarrantError("查無權證基本資料，請確認代號或稍後再試")
 
@@ -557,10 +608,11 @@ def load_warrant(code: str, existing: dict[str, Any] | None = None) -> dict[str,
     apply_yuanta_overrides(info, yuanta)
     volatility = choose_volatility(yuanta)
 
-    quote = fetch_quote(info.get("warrantMarket") or "tse", info.get("code") or normalized)
+    quote = fetch_quote_with_fallback(info.get("code") or normalized, info.get("warrantMarket") or "tse")
     if not quote:
         raise WarrantError("查無權證即時報價")
 
+    info["warrantMarket"] = quote.get("market") or info.get("warrantMarket") or "tse"
     info["underlyingCode"] = info.get("underlyingCode") or quote.get("relatedCode") or ""
     info["underlyingName"] = info.get("underlyingName") or quote.get("relatedName") or ""
 
@@ -652,8 +704,19 @@ def read_saved_items() -> list[dict[str, Any]]:
     return valid_items
 
 
+def clear_item_calculations(item: dict[str, Any]) -> dict[str, Any]:
+    for field in CALCULATION_FIELDS:
+        item[field] = "" if field in {"testSpot", "targetPrice"} else None
+    return item
+
+
+def item_without_calculations(item: dict[str, Any]) -> dict[str, Any]:
+    return clear_item_calculations(dict(item))
+
+
 def write_saved_items(items: list[dict[str, Any]]) -> None:
-    SAVE_PATH.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+    payload = [item_without_calculations(item) for item in items]
+    SAVE_PATH.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def ensure_pricing_fields(item: dict[str, Any]) -> dict[str, Any]:
@@ -666,11 +729,7 @@ def ensure_pricing_fields(item: dict[str, Any]) -> dict[str, Any]:
 
 def recalculate_derived_prices(item: dict[str, Any]) -> dict[str, Any]:
     ensure_pricing_fields(item)
-    item["testSpot"] = ""
-    item["targetPrice"] = ""
-    item["simulatedPrice"] = None
-    item["impliedSpot"] = None
-    return item
+    return clear_item_calculations(item)
 
 
 def normalize_saved_item(item: dict[str, Any]) -> dict[str, Any] | None:
@@ -867,6 +926,15 @@ def clear_calculation_inputs() -> None:
             del st.session_state[key]
 
 
+def reset_calculation_state_once() -> None:
+    if st.session_state.get("_calculation_state_version") == CALCULATION_STATE_VERSION:
+        return
+    clear_calculation_inputs()
+    for item in st.session_state.get("items", []):
+        clear_item_calculations(item)
+    st.session_state["_calculation_state_version"] = CALCULATION_STATE_VERSION
+
+
 def add_or_update_warrant(code: str) -> None:
     normalized = str(code or "").strip().upper()
     if not normalized:
@@ -889,12 +957,6 @@ def refresh_all_prices() -> None:
     if not st.session_state["items"]:
         return
     clear_realtime_caches()
-    try:
-        fetch_twse_warrants()
-        fetch_tpex_warrants()
-        fetch_twse_symbols()
-    except Exception:
-        pass
     refreshed: list[dict[str, Any] | None] = [None] * len(st.session_state["items"])
     failed = 0
     progress = st.progress(0, text="更新價格中...")
@@ -1718,9 +1780,6 @@ def render_warrant_card(item: dict[str, Any], index: int) -> None:
             if item.get("error"):
                 st.warning(item["error"])
 
-        if changed:
-            persist_current_items()
-
 
 def render_mobile_warrant_card(item: dict[str, Any], index: int) -> None:
     card_id = safe_key(item.get("id") or item.get("code") or str(index))
@@ -1820,9 +1879,6 @@ def render_mobile_warrant_card(item: dict[str, Any], index: int) -> None:
 
             if item.get("error"):
                 st.warning(item["error"])
-
-    if changed:
-        persist_current_items()
 
 
 def render_details(item: dict[str, Any]) -> None:
@@ -1931,6 +1987,7 @@ def main() -> None:
     inject_css()
     if "items" not in st.session_state:
         st.session_state["items"] = read_saved_items()
+    reset_calculation_state_once()
     render_sidebar()
     render_mobile_controls()
     render_main()
