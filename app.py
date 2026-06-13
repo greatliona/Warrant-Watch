@@ -33,7 +33,7 @@ YUANTA_QUOTE = "https://www.warrantwin.com.tw/eyuanta/ws/Quote.ashx"
 KGI_SERVICE = "https://warrant.kgi.com/EDWebService/WSInterfaceSwap.asmx/GetService"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.3b"
+APP_VERSION = "W1.0.3c"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
@@ -1359,6 +1359,13 @@ def calc_result_html(label: str, value: Any) -> str:
     )
 
 
+def error_note_html(message: Any) -> str:
+    text = str(message or "").strip()
+    if not text:
+        return ""
+    return f'<div class="card-error-note">{html.escape(text)}</div>'
+
+
 def detail_line(label: str, value: str) -> None:
     st.markdown(
         f'<div class="detail-line"><span>{html.escape(label)}</span><strong>{html.escape(value or "--")}</strong></div>',
@@ -1840,22 +1847,38 @@ def inject_css() -> None:
         .sidebar-status {
           display: flex;
           align-items: center;
-          gap: 0.38rem;
+          justify-content: flex-start;
+          gap: 0.22rem;
+          min-height: 2rem;
           min-width: 0;
         }
         .sidebar-status span {
           color: var(--muted);
-          font-size: 0.98rem;
+          font-size: 0.82rem;
           line-height: 1;
           font-weight: 850;
           white-space: nowrap;
         }
         .sidebar-status strong {
           color: var(--ink);
-          font-size: 0.98rem;
+          font-size: 0.82rem;
           line-height: 1;
           font-weight: 850;
           white-space: nowrap;
+        }
+        .card-error-note {
+          width: 50%;
+          min-width: 17rem;
+          max-width: 30rem;
+          margin-top: 0.44rem;
+          border-radius: 8px;
+          background: rgba(128, 126, 58, 0.48);
+          color: var(--ink);
+          padding: 0.42rem 0.56rem;
+          font-size: 0.76rem;
+          line-height: 1.25;
+          font-weight: 750;
+          overflow-wrap: anywhere;
         }
         .app-version,
         .mobile-version {
@@ -2170,6 +2193,13 @@ def inject_css() -> None:
           div[class*="st-key-mobile_delete_"] button {
             color: var(--danger);
           }
+          .card-error-note {
+            width: 100%;
+            min-width: 0;
+            max-width: none;
+            font-size: 0.7rem;
+            padding: 0.36rem 0.46rem;
+          }
         }
         @media (min-width: 901px) {
           div[class*="st-key-mobile_controls"] {
@@ -2312,7 +2342,7 @@ def render_warrant_card(item: dict[str, Any], index: int) -> None:
                         )
 
             if item.get("error"):
-                st.warning(item["error"])
+                st.markdown(error_note_html(item["error"]), unsafe_allow_html=True)
 
 
 def render_mobile_warrant_card(item: dict[str, Any], index: int) -> None:
@@ -2412,7 +2442,7 @@ def render_mobile_warrant_card(item: dict[str, Any], index: int) -> None:
                             )
 
             if item.get("error"):
-                st.warning(item["error"])
+                st.markdown(error_note_html(item["error"]), unsafe_allow_html=True)
 
 
 def render_details(item: dict[str, Any]) -> None:
@@ -2518,8 +2548,7 @@ def render_sidebar() -> None:
         with status_cols[0]:
             st.markdown(
                 '<div class="sidebar-status">'
-                '<span>已儲存</span>'
-                f'<strong>{len(st.session_state["items"])}</strong>'
+                f'<span>已儲存 <strong>{len(st.session_state["items"])}</strong> 檔</span>'
                 "</div>",
                 unsafe_allow_html=True,
             )
