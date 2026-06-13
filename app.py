@@ -33,7 +33,7 @@ YUANTA_QUOTE = "https://www.warrantwin.com.tw/eyuanta/ws/Quote.ashx"
 KGI_SERVICE = "https://warrant.kgi.com/EDWebService/WSInterfaceSwap.asmx/GetService"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.5g"
+APP_VERSION = "W1.0.5h"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
@@ -1948,7 +1948,7 @@ def inject_css() -> None:
           gap: 0.36rem !important;
         }
         .desktop-action-spacer {
-          height: 2.52rem;
+          height: 3.7rem;
         }
         div[class*="st-key-card_action_"],
         div[class*="st-key-delete_"],
@@ -2375,7 +2375,7 @@ def render_warrant_card(item: dict[str, Any], index: int) -> None:
                                 move_item(index, 1)
                     with btn_r:
                         with st.container(key=f"reset_{card_id}"):
-                            with st.popover("↶", help="重置隱波紀錄"):
+                            with st.popover("↺", help="重置隱波紀錄"):
                                 st.markdown("<div style='text-align: center; margin-bottom: 0.5rem; font-size: 0.85rem;'>確定重置隱波？</div>", unsafe_allow_html=True)
                                 if st.button("確認", key=f"confirm_reset_{card_id}", use_container_width=True):
                                     reset_volatility_tracking(st.session_state["items"][index])
@@ -2485,7 +2485,7 @@ def render_mobile_warrant_card(item: dict[str, Any], index: int) -> None:
                                 move_item(index, 1)
                     with btn_r:
                         with st.container(key=f"mobile_reset_{card_id}"):
-                            with st.popover("↶", help="重置隱波紀錄"):
+                            with st.popover("↺", help="重置隱波紀錄"):
                                 st.markdown("<div style='text-align: center; margin-bottom: 0.5rem; font-size: 0.85rem;'>確定重置隱波？</div>", unsafe_allow_html=True)
                                 if st.button("確認", key=f"m_confirm_reset_{card_id}", use_container_width=True):
                                     reset_volatility_tracking(st.session_state["items"][index])
