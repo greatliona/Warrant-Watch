@@ -33,7 +33,7 @@ YUANTA_QUOTE = "https://www.warrantwin.com.tw/eyuanta/ws/Quote.ashx"
 KGI_SERVICE = "https://warrant.kgi.com/EDWebService/WSInterfaceSwap.asmx/GetService"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.5h"
+APP_VERSION = "W1.0.5i"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
@@ -1948,7 +1948,7 @@ def inject_css() -> None:
           gap: 0.36rem !important;
         }
         .desktop-action-spacer {
-          height: 3.7rem;
+          height: 3.1rem;
         }
         div[class*="st-key-card_action_"],
         div[class*="st-key-delete_"],
@@ -1975,8 +1975,8 @@ def inject_css() -> None:
           color: var(--ink) !important;
         }
         div[class*="st-key-reset_"] button[data-testid="stPopoverButton"] p {
-          font-size: 1.25rem !important;
-          font-weight: 900 !important;
+          font-size: 1.15rem !important;
+          font-weight: normal !important;
           line-height: 1 !important;
           margin: 0 !important;
         }
@@ -2136,7 +2136,7 @@ def inject_css() -> None:
           }
           div[class*="st-key-mobile_card_"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] {
             display: grid !important;
-            grid-template-columns: minmax(0, 1fr) 3.15rem !important;
+            grid-template-columns: minmax(0, 1fr) 2.95rem !important;
             gap: 0.42rem !important;
             align-items: stretch !important;
           }
@@ -2251,19 +2251,21 @@ def inject_css() -> None:
             min-height: 7.1rem;
           }
           div[class*="st-key-mobile_btn_grid_"] [data-testid="stHorizontalBlock"] {
+            display: flex !important;
+            flex-direction: row !important;
             gap: 0.2rem !important;
             justify-content: center !important;
           }
           div[class*="st-key-mobile_btn_grid_"] [data-testid="stColumn"] {
             width: auto !important;
-            flex: none !important;
+            flex: 1 !important;
             min-width: 0 !important;
           }
           div[class*="st-key-mobile_btn_grid_"] [data-testid="stColumn"] > div[data-testid="stVerticalBlock"] {
             gap: 0.34rem !important;
           }
           .mobile-action-spacer {
-            height: 3.48rem;
+            height: 2.85rem;
           }
           div[class*="st-key-mobile_action_"],
           div[class*="st-key-mobile_delete_"],
@@ -2290,8 +2292,8 @@ def inject_css() -> None:
             color: var(--ink) !important;
           }
           div[class*="st-key-mobile_reset_"] button[data-testid="stPopoverButton"] p {
-            font-size: 1.15rem !important;
-            font-weight: 900 !important;
+            font-size: 1.05rem !important;
+            font-weight: normal !important;
             line-height: 1 !important;
             margin: 0 !important;
           }
