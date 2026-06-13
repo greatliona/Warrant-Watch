@@ -1707,17 +1707,19 @@ def inject_css() -> None:
           line-height: 1;
         }
         button[data-testid="stPopoverButton"] > div {
-          justify-content: center;
-          gap: 0;
+          width: 100% !important;
+          justify-content: center !important;
+          gap: 0 !important;
         }
         button[data-testid="stPopoverButton"] p {
-          margin: 0;
-          font-size: 1rem;
-          line-height: 1;
+          margin: 0 !important;
+          font-size: 1rem !important;
+          line-height: 1 !important;
+          text-align: center !important;
         }
         button[data-testid="stPopoverButton"] span[data-testid="stIconMaterial"],
         button[data-testid="stPopoverButton"] svg {
-          display: none;
+          display: none !important;
         }
         div[data-testid="stPopoverBody"] {
           background: var(--surface) !important;
