@@ -33,7 +33,7 @@ YUANTA_QUOTE = "https://www.warrantwin.com.tw/eyuanta/ws/Quote.ashx"
 KGI_SERVICE = "https://warrant.kgi.com/EDWebService/WSInterfaceSwap.asmx/GetService"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.3d"
+APP_VERSION = "W1.0.3e"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
@@ -1346,6 +1346,20 @@ def warrant_title_text(item: dict[str, Any]) -> str:
     return f"{name} {code}".strip() if name else code
 
 
+def warrant_title_html(item: dict[str, Any]) -> str:
+    name = str(item.get("name") or "").strip()
+    code = str(item.get("code") or "").strip()
+    title = warrant_title_text(item)
+    if name and code:
+        body = (
+            f'<span class="warrant-name">{html.escape(name)}</span>'
+            f'<span class="warrant-code">{html.escape(code)}</span>'
+        )
+    else:
+        body = f'<span class="warrant-name">{html.escape(title)}</span>'
+    return f'<div class="warrant-title" title="{html.escape(title)}">{body}</div>'
+
+
 def metric_html(label: str, value: Any, *, accent: bool = False) -> str:
     cls = "metric-value accent" if accent else "metric-value"
     return (
@@ -1694,6 +1708,9 @@ def inject_css() -> None:
           padding-bottom: 0.15rem;
         }
         .warrant-title {
+          display: flex;
+          align-items: baseline;
+          gap: 0.2rem;
           min-width: 0;
           overflow: hidden;
           text-overflow: ellipsis;
@@ -1701,6 +1718,17 @@ def inject_css() -> None:
           font-size: 0.91rem;
           line-height: 1.25;
           font-weight: 850;
+        }
+        .warrant-name {
+          min-width: 0;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .warrant-code {
+          flex: 0 0 auto;
+          color: var(--faint);
+          font-size: 0.82em;
+          font-weight: 800;
         }
         .card-header-grid {
           display: grid;
@@ -1877,7 +1905,7 @@ def inject_css() -> None:
           width: 36%;
           min-width: 14rem;
           max-width: 22rem;
-          margin: 0.56rem 0 0.08rem;
+          margin: 0.48rem 0 0.46rem;
           border-radius: 8px;
           background: rgba(128, 126, 58, 0.48);
           color: var(--ink);
@@ -2272,11 +2300,10 @@ def render_warrant_card(item: dict[str, Any], index: int) -> None:
             st.markdown("</div>", unsafe_allow_html=True)
 
         with card_cols[0]:
-            title = warrant_title_text(item)
             st.markdown(
                 '<div class="card-header-grid">'
                 '<div class="card-title-cell">'
-                f'<div class="warrant-title" title="{html.escape(title)}">{html.escape(title)}</div>'
+                f"{warrant_title_html(item)}"
                 f"{detail_html(item)}"
                 "</div>"
                 + metric_html("合理價", item.get("fairPrice"), accent=True)
@@ -2369,11 +2396,10 @@ def render_mobile_warrant_card(item: dict[str, Any], index: int) -> None:
                     delete_item(index)
 
         with card_cols[0]:
-            title = warrant_title_text(item)
             st.markdown(
                 '<div class="mobile-card-header">'
                 '<div class="mobile-title">'
-                f'<div class="warrant-title" title="{html.escape(title)}">{html.escape(title)}</div>'
+                f"{warrant_title_html(item)}"
                 f"{detail_html(item)}"
                 "</div>"
                 '<div class="mobile-metrics">'
