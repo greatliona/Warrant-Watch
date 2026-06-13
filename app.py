@@ -33,7 +33,7 @@ YUANTA_QUOTE = "https://www.warrantwin.com.tw/eyuanta/ws/Quote.ashx"
 KGI_SERVICE = "https://warrant.kgi.com/EDWebService/WSInterfaceSwap.asmx/GetService"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.5j"
+APP_VERSION = "W1.0.5k"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
@@ -1706,20 +1706,26 @@ def inject_css() -> None:
           color: var(--accent-strong);
           line-height: 1;
         }
-        button[data-testid="stPopoverButton"] > div {
+        button[data-testid="stPopoverButton"] > :first-child {
           width: 100% !important;
+          display: flex !important;
           justify-content: center !important;
+          align-items: center !important;
           gap: 0 !important;
+        }
+        button[data-testid="stPopoverButton"] > :nth-child(n+2) {
+          display: none !important;
+        }
+        button[data-testid="stPopoverButton"]::after,
+        button[data-testid="stPopoverButton"]::before {
+          display: none !important;
+          content: none !important;
         }
         button[data-testid="stPopoverButton"] p {
           margin: 0 !important;
           font-size: 1rem !important;
           line-height: 1 !important;
           text-align: center !important;
-        }
-        button[data-testid="stPopoverButton"] span[data-testid="stIconMaterial"],
-        button[data-testid="stPopoverButton"] svg {
-          display: none !important;
         }
         div[data-testid="stPopoverBody"] {
           background: var(--surface) !important;
