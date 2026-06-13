@@ -1706,26 +1706,18 @@ def inject_css() -> None:
           color: var(--accent-strong);
           line-height: 1;
         }
-        button[data-testid="stPopoverButton"] > :first-child {
-          width: 100% !important;
-          display: flex !important;
-          justify-content: center !important;
-          align-items: center !important;
-          gap: 0 !important;
-        }
-        button[data-testid="stPopoverButton"] > :nth-child(n+2) {
-          display: none !important;
-        }
-        button[data-testid="stPopoverButton"]::after,
-        button[data-testid="stPopoverButton"]::before {
-          display: none !important;
-          content: none !important;
+        button[data-testid="stPopoverButton"] > div {
+          justify-content: center;
+          gap: 0;
         }
         button[data-testid="stPopoverButton"] p {
-          margin: 0 !important;
-          font-size: 1rem !important;
-          line-height: 1 !important;
-          text-align: center !important;
+          margin: 0;
+          font-size: 1rem;
+          line-height: 1;
+        }
+        button[data-testid="stPopoverButton"] span[data-testid="stIconMaterial"],
+        button[data-testid="stPopoverButton"] svg {
+          display: none;
         }
         div[data-testid="stPopoverBody"] {
           background: var(--surface) !important;
@@ -2406,8 +2398,10 @@ def render_warrant_card(item: dict[str, Any], index: int) -> None:
                                     reset_volatility_tracking(st.session_state["items"][index])
                                     st.rerun()
                         with st.container(key=f"delete_{card_id}"):
-                            if st.button("×", key=f"del_{card_id}", help="刪除這檔權證"):
-                                delete_item(index)
+                            with st.popover("×", help="刪除這檔權證"):
+                                st.markdown("<div style='text-align: center; margin-bottom: 0.5rem; font-size: 0.85rem;'>確定刪除？</div>", unsafe_allow_html=True)
+                                if st.button("確認", key=f"confirm_del_{card_id}", use_container_width=True):
+                                    delete_item(index)
 
         with card_cols[0]:
             st.markdown(
@@ -2516,8 +2510,10 @@ def render_mobile_warrant_card(item: dict[str, Any], index: int) -> None:
                                     reset_volatility_tracking(st.session_state["items"][index])
                                     st.rerun()
                         with st.container(key=f"mobile_delete_{card_id}"):
-                            if st.button("×", key=f"m_del_{card_id}", help="刪除這檔權證"):
-                                delete_item(index)
+                            with st.popover("×", help="刪除這檔權證"):
+                                st.markdown("<div style='text-align: center; margin-bottom: 0.5rem; font-size: 0.85rem;'>確定刪除？</div>", unsafe_allow_html=True)
+                                if st.button("確認", key=f"m_confirm_del_{card_id}", use_container_width=True):
+                                    delete_item(index)
 
         with card_cols[0]:
             st.markdown(
