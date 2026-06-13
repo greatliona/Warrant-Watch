@@ -32,7 +32,7 @@ YUANTA_QUOTE = "https://www.warrantwin.com.tw/eyuanta/ws/Quote.ashx"
 KGI_SERVICE = "https://warrant.kgi.com/EDWebService/WSInterfaceSwap.asmx/GetService"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.2h"
+APP_VERSION = "W1.0.2i"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
@@ -618,6 +618,28 @@ def info_from_existing_item(code: str, existing: dict[str, Any] | None) -> dict[
     }
 
 
+def info_from_quote(code: str, quote: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "code": quote.get("code") or code,
+        "name": quote.get("name") or quote.get("fullName") or "",
+        "warrantType": "call",
+        "category": "",
+        "quoteStyle": "",
+        "settlement": "",
+        "underlyingName": quote.get("relatedName") or "",
+        "underlyingCode": quote.get("relatedCode") or "",
+        "underlyingMarket": quote.get("market") or "tse",
+        "warrantMarket": quote.get("market") or "tse",
+        "strike": None,
+        "ratio": None,
+        "sharesPerThousand": None,
+        "startDate": "",
+        "lastTradingDate": "",
+        "exerciseEndDate": "",
+        "sourceDate": "",
+    }
+
+
 def apply_yuanta_overrides(info: dict[str, Any], yuanta: dict[str, Any] | None) -> None:
     if not yuanta:
         return
@@ -780,6 +802,70 @@ def quote_reference(quote: dict[str, Any] | None) -> float | None:
     )
 
 
+def quote_from_yuanta(row: dict[str, Any] | None, code: str) -> dict[str, Any] | None:
+    if not row:
+        return None
+    bid = first_number(row.get("FLD_WAR_BUY_PRICE"))
+    ask = first_number(row.get("FLD_WAR_SELL_PRICE"))
+    mid = (bid + ask) / 2 if bid is not None and ask is not None else None
+    price = first_number(row.get("FLD_WAR_TXN_PRICE"), mid, bid, ask)
+    return {
+        "market": "tse",
+        "code": row.get("FLD_WAR_ID") or code,
+        "name": row.get("FLD_WAR_NM") or "",
+        "fullName": row.get("FLD_WAR_NM") or "",
+        "relatedCode": row.get("FLD_UND_ID") or "",
+        "relatedName": row.get("FLD_UND_NM") or "",
+        "date": today_compact(),
+        "time": "",
+        "last": to_number(row.get("FLD_WAR_TXN_PRICE")),
+        "recent": to_number(row.get("FLD_WAR_TXN_PRICE")),
+        "price": price,
+        "previousClose": None,
+        "open": None,
+        "high": None,
+        "low": None,
+        "bestBid": bid,
+        "bestAsk": ask,
+        "mid": mid,
+        "bidSize": [],
+        "askSize": [],
+        "rawStatus": "yuanta",
+    }
+
+
+def underlying_quote_from_yuanta(row: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not row:
+        return None
+    bid = first_number(row.get("FLD_OBJ_BUY_PRICE"), row.get("FLD_OBJ_2BUY_PRICE"))
+    ask = first_number(row.get("FLD_OBJ_SELL_PRICE"), row.get("FLD_OBJ_2SELL_PRICE"))
+    mid = (bid + ask) / 2 if bid is not None and ask is not None else None
+    price = first_number(row.get("FLD_OBJ_TXN_PRICE"), mid, bid, ask)
+    return {
+        "market": "tse",
+        "code": row.get("FLD_UND_ID") or "",
+        "name": row.get("FLD_UND_NM") or "",
+        "fullName": row.get("FLD_UND_NM") or "",
+        "relatedCode": "",
+        "relatedName": "",
+        "date": today_compact(),
+        "time": "",
+        "last": to_number(row.get("FLD_OBJ_TXN_PRICE")),
+        "recent": to_number(row.get("FLD_OBJ_TXN_PRICE")),
+        "price": price,
+        "previousClose": None,
+        "open": None,
+        "high": None,
+        "low": None,
+        "bestBid": bid,
+        "bestAsk": ask,
+        "mid": mid,
+        "bidSize": [],
+        "askSize": [],
+        "rawStatus": "yuanta",
+    }
+
+
 def implied_spot_from_price(item: dict[str, Any], target_price: Any) -> float | None:
     target = to_number(target_price)
     strike = to_number(item.get("strike"))
@@ -829,51 +915,68 @@ def load_warrant(code: str, existing: dict[str, Any] | None = None) -> dict[str,
     if re.fullmatch(r"\d{4}", normalized):
         raise WarrantError("請輸入權證代號，不是股票代號；例如 068562")
 
-    info = info_from_existing_item(normalized, existing) or find_warrant_info(normalized)
-    if not info:
-        raise WarrantError("查無權證基本資料，請確認代號或稍後再試")
-
-    quote = fetch_quote_with_fallback(info.get("code") or normalized, info.get("warrantMarket") or "tse")
-    if not quote:
-        raise WarrantError("查無權證即時報價")
-
-    info["warrantMarket"] = quote.get("market") or info.get("warrantMarket") or "tse"
-    info["underlyingCode"] = info.get("underlyingCode") or quote.get("relatedCode") or ""
-    info["underlyingName"] = info.get("underlyingName") or quote.get("relatedName") or ""
-    issuer = warrant_issuer({"name": info.get("name"), "quote": quote})
-
+    info = info_from_existing_item(normalized, existing) or {
+        "code": normalized,
+        "name": "",
+        "warrantType": "call",
+        "underlyingName": "",
+        "underlyingCode": "",
+        "underlyingMarket": "tse",
+        "warrantMarket": "tse",
+        "strike": None,
+        "ratio": None,
+        "lastTradingDate": "",
+        "exerciseEndDate": "",
+    }
     yuanta: dict[str, Any] | None = None
     kgi_warrant: dict[str, Any] | None = None
     kgi_underlying: dict[str, Any] | None = None
     yuanta_error = ""
     kgi_error = ""
-    if issuer == "yuanta":
-        try:
-            yuanta = fetch_yuanta_warrant(normalized)
-            if not yuanta:
-                yuanta_error = "元大資料讀不到這檔權證"
-            apply_yuanta_overrides(info, yuanta)
-        except Exception as error:
-            yuanta_error = str(error)
-            yuanta = None
-    elif issuer == "kgi":
+    quote = None
+
+    try:
+        yuanta = fetch_yuanta_warrant(normalized)
+        apply_yuanta_overrides(info, yuanta)
+    except Exception as error:
+        yuanta_error = str(error)
+        yuanta = None
+
+    issuer = "yuanta" if yuanta else warrant_issuer({"name": info.get("name")})
+    if not issuer:
         try:
             kgi_warrant = fetch_kgi_warrant(normalized)
-            if not kgi_warrant:
-                kgi_error = "凱基資料讀不到這檔權證"
             apply_kgi_overrides(info, kgi_warrant)
             kgi_underlying = fetch_kgi_underlying_by_warrant(kgi_warrant)
         except Exception as error:
             kgi_error = str(error)
             kgi_warrant = None
             kgi_underlying = None
+        issuer = "kgi" if kgi_warrant else warrant_issuer({"name": info.get("name")})
 
-    underlying_quote = None
+    quote = fetch_quote_with_fallback(normalized, info.get("warrantMarket") or "tse") or quote_from_yuanta(yuanta, normalized)
+    if not quote:
+        details = "；".join(message for message in (yuanta_error, kgi_error) if message)
+        raise WarrantError(f"查無權證即時報價{f'：{details}' if details else ''}")
+
+    info = info_from_quote(normalized, quote) | info
+    info["warrantMarket"] = quote.get("market") or info.get("warrantMarket") or "tse"
+    info["underlyingCode"] = info.get("underlyingCode") or quote.get("relatedCode") or ""
+    info["underlyingName"] = info.get("underlyingName") or quote.get("relatedName") or ""
+
+    if issuer == "yuanta":
+        if not yuanta:
+            yuanta_error = yuanta_error or "元大資料讀不到這檔權證"
+    elif issuer == "kgi":
+        if not kgi_warrant:
+            kgi_error = kgi_error or "凱基資料讀不到這檔權證"
+
+    underlying_quote = underlying_quote_from_yuanta(yuanta)
     if info.get("underlyingCode"):
         underlying_quote = fetch_quote_with_fallback(
             info["underlyingCode"],
             info.get("underlyingMarket") or info.get("warrantMarket") or "tse",
-        )
+        ) or underlying_quote
     if not underlying_quote:
         raise WarrantError("查無標的即時報價")
 
