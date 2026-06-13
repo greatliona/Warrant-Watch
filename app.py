@@ -33,7 +33,7 @@ YUANTA_QUOTE = "https://www.warrantwin.com.tw/eyuanta/ws/Quote.ashx"
 KGI_SERVICE = "https://warrant.kgi.com/EDWebService/WSInterfaceSwap.asmx/GetService"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.4g"
+APP_VERSION = "W1.0.4f"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
@@ -1377,22 +1377,6 @@ def apply_volatility_tracking(item: dict[str, Any], existing: dict[str, Any] | N
     return item
 
 
-def reset_volatility_tracking(index: int) -> None:
-    item = st.session_state["items"][index]
-    current_volatility = to_number(item.get("volatility"))
-    now = datetime.now(TAIPEI).isoformat()
-    item["volatilityAlerted"] = False
-    item["previousVolatility"] = current_volatility
-    item["volatilityChangePoints"] = None
-    item["volatilityDirection"] = ""
-    item["volatilityFirstAlertAt"] = ""
-    item["volatilityLastAlertAt"] = ""
-    item["volatilityLastCheckAt"] = now
-    persist_current_items()
-    st.toast(f"{item.get('code')} 已重新開始追蹤隱波")
-    st.rerun()
-
-
 def volatility_tracking_text(item: dict[str, Any]) -> str:
     previous = to_number(item.get("previousVolatility"))
     change = to_number(item.get("volatilityChangePoints"))
@@ -1833,23 +1817,6 @@ def inject_css() -> None:
           gap: 5px;
           min-width: 0;
         }
-        div[class*="st-key-card_header_"] {
-          margin-bottom: 0.46rem;
-        }
-        div[class*="st-key-card_header_"] div[data-testid="stHorizontalBlock"] {
-          align-items: start !important;
-          gap: 0.44rem !important;
-        }
-        div[class*="st-key-card_header_"] .warrant-title {
-          padding-top: 0.16rem;
-        }
-        div[class*="st-key-mobile_header_"] {
-          margin-bottom: 0.36rem;
-        }
-        div[class*="st-key-mobile_header_"] div[data-testid="stHorizontalBlock"] {
-          align-items: start !important;
-          gap: 0.34rem !important;
-        }
         .native-detail-popover {
           position: relative;
           flex: 0 0 auto;
@@ -1880,15 +1847,6 @@ def inject_css() -> None:
           border-color: #fbbc04;
           background: rgba(251, 188, 4, 0.14);
           box-shadow: 0 0 0 1px rgba(251, 188, 4, 0.16), 0 0 12px rgba(251, 188, 4, 0.16);
-        }
-        div[class*="st-key-vol_pop_lit_"] button[data-testid="stPopoverButton"] {
-          color: #fdd663;
-          border-color: #fbbc04;
-          background: rgba(251, 188, 4, 0.14);
-          box-shadow: 0 0 0 1px rgba(251, 188, 4, 0.16), 0 0 12px rgba(251, 188, 4, 0.16);
-        }
-        div[class*="st-key-vol_pop_dim_"] button[data-testid="stPopoverButton"] {
-          color: var(--accent-strong);
         }
         .native-detail-body {
           position: absolute;
@@ -1962,25 +1920,25 @@ def inject_css() -> None:
           display: grid !important;
           align-content: start !important;
           justify-items: center !important;
-          gap: 0.18rem !important;
+          gap: 0.36rem !important;
         }
         .desktop-action-spacer {
-          height: 3.05rem;
+          height: 3.88rem;
         }
         div[class*="st-key-card_action_"],
         div[class*="st-key-delete_"] {
           display: flex;
           align-items: center;
           justify-content: center;
-          height: 1.28rem;
+          height: 1.45rem;
           margin: 0 !important;
         }
         div[class*="st-key-card_action_"] button,
         div[class*="st-key-delete_"] button {
-          width: 1.28rem;
-          min-width: 1.28rem;
-          min-height: 1.28rem;
-          height: 1.28rem;
+          width: 1.45rem;
+          min-width: 1.45rem;
+          min-height: 1.45rem;
+          height: 1.45rem;
           padding: 0;
           border-radius: 6px;
           font-size: 0.7rem;
@@ -2081,12 +2039,6 @@ def inject_css() -> None:
           gap: 0.22rem;
           min-width: 0;
         }
-        .mobile-status-stack {
-          display: grid;
-          place-items: center;
-          gap: 0.08rem;
-          min-width: 0;
-        }
         .mobile-status span {
           color: var(--muted);
           font-size: 0.74rem;
@@ -2138,7 +2090,6 @@ def inject_css() -> None:
           gap: 0.54rem;
           grid-column: 1 / -1;
           padding-right: 0;
-          margin-bottom: 0.48rem;
         }
         .mobile-calc-output {
           min-width: 0;
@@ -2347,24 +2298,24 @@ def inject_css() -> None:
             display: grid !important;
             align-content: start !important;
             justify-items: center !important;
-            gap: 0.12rem !important;
-            min-height: 4.1rem;
+            gap: 0.34rem !important;
+            min-height: 7.1rem;
           }
           .mobile-action-spacer {
-            height: 3.05rem;
+            height: 3.48rem;
           }
           div[class*="st-key-mobile_action_"],
           div[class*="st-key-mobile_delete_"] {
-            height: 1.1rem;
+            height: 1.32rem;
             margin: 0 !important;
           }
           div[class*="st-key-mobile_action_"] button,
           div[class*="st-key-mobile_delete_"] button {
-            width: 1.1rem;
-            min-width: 1.1rem;
-            min-height: 1.1rem;
-            height: 1.1rem;
-            font-size: 0.58rem;
+            width: 1.32rem;
+            min-width: 1.32rem;
+            min-height: 1.32rem;
+            height: 1.32rem;
+            font-size: 0.62rem;
             padding: 0;
             border-radius: 6px;
           }
@@ -2427,23 +2378,6 @@ def inject_css() -> None:
     )
 
 
-def render_volatility_popover(item: dict[str, Any], index: int, card_id: str, prefix: str) -> None:
-    lit = bool(item.get("volatilityAlerted"))
-    wrapper_key = f"vol_pop_{'lit' if lit else 'dim'}_{prefix}_{card_id}"
-    confirm_key = f"confirm_reset_vol_{prefix}_{card_id}"
-    button_key = f"reset_vol_{prefix}_{card_id}"
-    with st.container(key=wrapper_key):
-        with st.popover("★" if lit else "☆"):
-            render_details(item)
-            st.markdown(
-                '<div class="small-note">重新開始後，這檔會用目前隱波作為新的追蹤基準。</div>',
-                unsafe_allow_html=True,
-            )
-            confirmed = st.checkbox("確認清除追蹤紀錄", key=confirm_key)
-            if st.button("重新開始記錄", key=button_key, disabled=not confirmed, use_container_width=True):
-                reset_volatility_tracking(index)
-
-
 def render_warrant_card(item: dict[str, Any], index: int) -> None:
     card_id = safe_key(item.get("id") or item.get("code") or str(index))
     with st.container(border=True, key=f"card_{card_id}"):
@@ -2461,18 +2395,18 @@ def render_warrant_card(item: dict[str, Any], index: int) -> None:
                     delete_item(index)
 
         with card_cols[0]:
-            with st.container(key=f"card_header_{card_id}"):
-                header_cols = st.columns([1.0, 0.1, 0.22, 0.18, 0.32], gap="small")
-                with header_cols[0]:
-                    st.markdown(warrant_title_html(item), unsafe_allow_html=True)
-                with header_cols[1]:
-                    render_volatility_popover(item, index, card_id, "desktop")
-                with header_cols[2]:
-                    st.markdown(metric_html("合理價", item.get("fairPrice"), accent=True), unsafe_allow_html=True)
-                with header_cols[3]:
-                    st.markdown(metric_html("報價", item.get("marketReference")), unsafe_allow_html=True)
-                with header_cols[4]:
-                    st.markdown(metric_html("現貨股價", item.get("spot")), unsafe_allow_html=True)
+            st.markdown(
+                '<div class="card-header-grid">'
+                '<div class="card-title-cell">'
+                f"{warrant_title_html(item)}"
+                f"{detail_html(item)}"
+                "</div>"
+                + metric_html("合理價", item.get("fairPrice"), accent=True)
+                + metric_html("報價", item.get("marketReference"))
+                + metric_html("現貨股價", item.get("spot"))
+                + "</div>",
+                unsafe_allow_html=True,
+            )
 
             calc_cols = st.columns(2, gap="small")
             with calc_cols[0]:
@@ -2558,18 +2492,18 @@ def render_mobile_warrant_card(item: dict[str, Any], index: int) -> None:
                     delete_item(index)
 
         with card_cols[0]:
-            with st.container(key=f"mobile_header_{card_id}"):
-                title_cols = st.columns([1.0, 0.12], gap="small")
-                with title_cols[0]:
-                    st.markdown(warrant_title_html(item), unsafe_allow_html=True)
-                with title_cols[1]:
-                    render_volatility_popover(item, index, card_id, "mobile")
             st.markdown(
+                '<div class="mobile-card-header">'
+                '<div class="mobile-title">'
+                f"{warrant_title_html(item)}"
+                f"{detail_html(item)}"
+                "</div>"
                 '<div class="mobile-metrics">'
                 + metric_html("合理價", item.get("fairPrice"), accent=True)
                 + metric_html("報價", item.get("marketReference"))
                 + metric_html("現貨股價", item.get("spot"))
-                + "</div>",
+                + "</div>"
+                "</div>",
                 unsafe_allow_html=True,
             )
 
@@ -2702,11 +2636,8 @@ def render_mobile_controls() -> None:
                         st.error(str(error))
         with control_cols[1]:
             st.markdown(
-                '<div class="mobile-status-stack">'
                 '<div class="mobile-status">'
                 f'<span>已儲存 <strong>{len(st.session_state["items"])}</strong> 檔</span>'
-                "</div>"
-                f'<div class="mobile-update-time">最近更新 {html.escape(latest_update_text(st.session_state["items"]))}</div>'
                 "</div>",
                 unsafe_allow_html=True,
             )
@@ -2716,6 +2647,10 @@ def render_mobile_controls() -> None:
                     refresh_all_prices()
                 except Exception as error:
                     st.error(str(error))
+        st.markdown(
+            f'<div class="mobile-update-time">最近更新 {html.escape(latest_update_text(st.session_state["items"]))}</div>',
+            unsafe_allow_html=True,
+        )
 
 
 def render_sidebar() -> None:
