@@ -2,3 +2,4 @@ __pycache__/
 .venv/
 *.pyc
 streamlit_warrant_watch.png
+saved_warrants.json

@@ -21,7 +21,6 @@ import streamlit as st
 
 
 APP_DIR = Path(__file__).resolve().parent
-SAVE_PATH = APP_DIR / "saved_warrants.json"
 TAIPEI = ZoneInfo("Asia/Taipei")
 
 TWSE_MIS = "https://mis.twse.com.tw/stock/api/getStockInfo.jsp"
@@ -32,11 +31,13 @@ YUANTA_WARRANT_DATA = "https://www.warrantwin.com.tw/eyuanta/ws/GetWarData.ashx"
 YUANTA_QUOTE = "https://www.warrantwin.com.tw/eyuanta/ws/Quote.ashx"
 KGI_SERVICE = "https://warrant.kgi.com/EDWebService/WSInterfaceSwap.asmx/GetService"
 
-HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit local app"}
-APP_VERSION = "W1.0.2e"
+HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
+APP_VERSION = "W1.0.2g"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
+SUPABASE_TABLE_DEFAULT = "warrant_watch_lists"
+SUPABASE_PROFILE_DEFAULT = "default"
 
 
 class WarrantError(Exception):
@@ -107,6 +108,105 @@ def deployed_commit() -> str:
 def app_version_text() -> str:
     commit = deployed_commit()
     return f"版本 {APP_VERSION}" + (f" · {commit}" if commit else "")
+
+
+def secret_value(env_key: str, nested_key: str | None = None, default: str = "") -> str:
+    value = os.environ.get(env_key)
+    if value:
+        return value
+    try:
+        if env_key in st.secrets:
+            return str(st.secrets[env_key])
+        supabase = st.secrets.get("supabase", {})
+        if nested_key and nested_key in supabase:
+            return str(supabase[nested_key])
+    except Exception:
+        return default
+    return default
+
+
+def supabase_config() -> dict[str, str] | None:
+    url = secret_value("SUPABASE_URL", "url").rstrip("/")
+    key = secret_value("SUPABASE_KEY", "key") or secret_value("SUPABASE_ANON_KEY", "anon_key")
+    if not url or not key:
+        return None
+    table = secret_value("SUPABASE_TABLE", "table", SUPABASE_TABLE_DEFAULT) or SUPABASE_TABLE_DEFAULT
+    profile_id = secret_value("SUPABASE_PROFILE_ID", "profile_id", SUPABASE_PROFILE_DEFAULT) or SUPABASE_PROFILE_DEFAULT
+    if not re.fullmatch(r"[A-Za-z0-9_]+", table):
+        raise WarrantError("Supabase table name 只能包含英文、數字與底線")
+    return {"url": url, "key": key, "table": table, "profile_id": profile_id}
+
+
+def storage_label() -> str:
+    return "Supabase" if supabase_config() else "Supabase 未設定"
+
+
+def supabase_headers(config: dict[str, str], *, prefer: str = "") -> dict[str, str]:
+    headers = {
+        **HEADERS,
+        "apikey": config["key"],
+        "Authorization": f"Bearer {config['key']}",
+        "Content-Type": "application/json",
+    }
+    if prefer:
+        headers["Prefer"] = prefer
+    return headers
+
+
+def supabase_endpoint(config: dict[str, str]) -> str:
+    return f"{config['url']}/rest/v1/{config['table']}"
+
+
+def read_supabase_items() -> list[dict[str, Any]]:
+    config = supabase_config()
+    if not config:
+        raise WarrantError("Supabase 尚未設定，請先設定 SUPABASE_URL / SUPABASE_KEY")
+    response = requests.get(
+        supabase_endpoint(config),
+        headers=supabase_headers(config),
+        params={
+            "profile_id": f"eq.{config['profile_id']}",
+            "select": "items",
+            "limit": "1",
+        },
+        timeout=12,
+    )
+    response.raise_for_status()
+    rows = response.json()
+    if not rows:
+        return []
+    items = rows[0].get("items") or []
+    return items if isinstance(items, list) else []
+
+
+def write_supabase_items(items: list[dict[str, Any]]) -> bool:
+    config = supabase_config()
+    if not config:
+        raise WarrantError("Supabase 尚未設定，無法儲存清單")
+    payload = {
+        "profile_id": config["profile_id"],
+        "items": [item_without_calculations(item) for item in items],
+        "updated_at": datetime.now(TAIPEI).isoformat(),
+    }
+    patch_response = requests.patch(
+        supabase_endpoint(config),
+        headers=supabase_headers(config, prefer="return=representation"),
+        params={"profile_id": f"eq.{config['profile_id']}"},
+        json={"items": payload["items"], "updated_at": payload["updated_at"]},
+        timeout=12,
+    )
+    patch_response.raise_for_status()
+    updated_rows = patch_response.json() if patch_response.text else []
+    if updated_rows:
+        return True
+    post_response = requests.post(
+        supabase_endpoint(config),
+        headers=supabase_headers(config, prefer="return=minimal"),
+        json=payload,
+        timeout=12,
+    )
+    post_response.raise_for_status()
+    return True
 
 
 def split_book(value: Any) -> list[float]:
@@ -315,6 +415,26 @@ def fetch_kgi_warrant(code: str) -> dict[str, Any] | None:
     return None
 
 
+def fetch_kgi_underlying_by_warrant(warrant: dict[str, Any] | None) -> dict[str, Any] | None:
+    insnbr = int(to_number((warrant or {}).get("INSTR_INSNBR")) or 0)
+    if not insnbr:
+        return None
+    result = fetch_kgi_service("S0600017_GetUnderlyingByWarrant", {"INSTR_INSNBR": insnbr})
+    if isinstance(result, list) and result:
+        return result[0]
+    return None
+
+
+def choose_kgi_underlying_price(warrant: dict[str, Any] | None, underlying: dict[str, Any] | None) -> float | None:
+    if not warrant or not underlying:
+        return None
+    if warrant.get("INSWRT_STOCKTYPE") == "DI":
+        return first_number(underlying.get("DEAL"), 1)
+    if warrant.get("INSWRT_CP") == "認售":
+        return first_number(underlying.get("ASK1"), underlying.get("DEAL"))
+    return first_number(underlying.get("BID1"), underlying.get("DEAL"))
+
+
 def build_kgi_calc_params_from_warrant(warrant: dict[str, Any], spot: Any) -> dict[str, Any] | None:
     insnbr = int(to_number(warrant.get("INSTR_INSNBR")) or 0)
     vol = to_number(warrant.get("MTM_BID_VOL"))
@@ -512,6 +632,18 @@ def apply_yuanta_overrides(info: dict[str, Any], yuanta: dict[str, Any] | None) 
     info["exerciseEndDate"] = compact_date_to_iso(yuanta.get("FLD_DUR_END")) or info.get("exerciseEndDate") or ""
 
 
+def apply_kgi_overrides(info: dict[str, Any], kgi: dict[str, Any] | None) -> None:
+    if not kgi:
+        return
+    info["name"] = kgi.get("INSTR_NAME") or info.get("name") or ""
+    info["warrantType"] = "put" if kgi.get("INSWRT_CP") == "認售" else "call"
+    info["underlyingCode"] = kgi.get("UND_INSTR_STKID") or info.get("underlyingCode") or ""
+    info["underlyingName"] = kgi.get("UND_INSTR_NAME") or info.get("underlyingName") or ""
+    info["strike"] = first_number(kgi.get("INSWRT_STRIKE"), info.get("strike"))
+    info["ratio"] = first_number(kgi.get("INSWRT_EXECRATE"), info.get("ratio"))
+    info["exerciseEndDate"] = compact_date_to_iso(kgi.get("INSWRT_EXPIRED_DATE")) or info.get("exerciseEndDate") or ""
+
+
 @st.cache_data(ttl=5, show_spinner=False)
 def fetch_quote(market: str, code: str) -> dict[str, Any] | None:
     params = {
@@ -608,6 +740,31 @@ def fetch_yuanta_price_for_item(item: dict[str, Any], spot: Any) -> float | None
     return fetch_yuanta_quote_price(params)
 
 
+def warrant_issuer(item: dict[str, Any]) -> str:
+    text = " ".join(
+        str(value or "")
+        for value in (
+            item.get("issuer"),
+            item.get("name"),
+            (item.get("quote") or {}).get("name"),
+            (item.get("quote") or {}).get("fullName"),
+        )
+    )
+    if "元大" in text:
+        return "yuanta"
+    if "凱基" in text:
+        return "kgi"
+    return ""
+
+
+def issuer_label(issuer: str) -> str:
+    if issuer == "yuanta":
+        return "元大"
+    if issuer == "kgi":
+        return "凱基"
+    return "未知券商"
+
+
 def quote_reference(quote: dict[str, Any] | None) -> float | None:
     if not quote:
         return None
@@ -673,13 +830,6 @@ def load_warrant(code: str, existing: dict[str, Any] | None = None) -> dict[str,
     if not info:
         raise WarrantError("查無權證基本資料，請確認代號或稍後再試")
 
-    try:
-        yuanta = fetch_yuanta_warrant(normalized)
-    except Exception:
-        yuanta = None
-    apply_yuanta_overrides(info, yuanta)
-    volatility = choose_volatility(yuanta)
-
     quote = fetch_quote_with_fallback(info.get("code") or normalized, info.get("warrantMarket") or "tse")
     if not quote:
         raise WarrantError("查無權證即時報價")
@@ -687,6 +837,33 @@ def load_warrant(code: str, existing: dict[str, Any] | None = None) -> dict[str,
     info["warrantMarket"] = quote.get("market") or info.get("warrantMarket") or "tse"
     info["underlyingCode"] = info.get("underlyingCode") or quote.get("relatedCode") or ""
     info["underlyingName"] = info.get("underlyingName") or quote.get("relatedName") or ""
+    issuer = warrant_issuer({"name": info.get("name"), "quote": quote})
+
+    yuanta: dict[str, Any] | None = None
+    kgi_warrant: dict[str, Any] | None = None
+    kgi_underlying: dict[str, Any] | None = None
+    yuanta_error = ""
+    kgi_error = ""
+    if issuer == "yuanta":
+        try:
+            yuanta = fetch_yuanta_warrant(normalized)
+            if not yuanta:
+                yuanta_error = "元大資料讀不到這檔權證"
+            apply_yuanta_overrides(info, yuanta)
+        except Exception as error:
+            yuanta_error = str(error)
+            yuanta = None
+    elif issuer == "kgi":
+        try:
+            kgi_warrant = fetch_kgi_warrant(normalized)
+            if not kgi_warrant:
+                kgi_error = "凱基資料讀不到這檔權證"
+            apply_kgi_overrides(info, kgi_warrant)
+            kgi_underlying = fetch_kgi_underlying_by_warrant(kgi_warrant)
+        except Exception as error:
+            kgi_error = str(error)
+            kgi_warrant = None
+            kgi_underlying = None
 
     underlying_quote = None
     if info.get("underlyingCode"):
@@ -700,29 +877,47 @@ def load_warrant(code: str, existing: dict[str, Any] | None = None) -> dict[str,
     info["underlyingMarket"] = underlying_quote.get("market") or info.get("underlyingMarket")
     info["underlyingName"] = info.get("underlyingName") or underlying_quote.get("name") or ""
 
-    underlying_price = first_number(choose_underlying_price(yuanta), quote_reference(underlying_quote))
+    yuanta_volatility = choose_volatility(yuanta)
+    if issuer == "kgi":
+        volatility = {
+            "value": first_number((kgi_warrant or {}).get("MTM_BID_VOL")),
+            "source": "凱基委買波動率" if first_number((kgi_warrant or {}).get("MTM_BID_VOL")) else "",
+        }
+        underlying_price = first_number(
+            choose_kgi_underlying_price(kgi_warrant, kgi_underlying),
+            quote_reference(underlying_quote),
+        )
+        risk_free_rate = 1.5
+        history_volatility = to_number((kgi_warrant or {}).get("THREE_MONTH_HISTORY_VOLAILITY"))
+    else:
+        volatility = yuanta_volatility
+        underlying_price = first_number(choose_underlying_price(yuanta), quote_reference(underlying_quote))
+        risk_free_rate = first_number((yuanta or {}).get("FLD_RISK_RATE_FREE"), 1.5)
+        history_volatility = to_number((yuanta or {}).get("FLD_HISTORY_VOLATILITY_3M"))
     pricing = {
         "evaluationDate": today_iso(),
         "underlyingPrice": underlying_price,
         "volatility": volatility.get("value"),
         "volatilitySource": volatility.get("source"),
-        "riskFreeRate": first_number((yuanta or {}).get("FLD_RISK_RATE_FREE"), 1.5),
-        "historyVolatility": to_number((yuanta or {}).get("FLD_HISTORY_VOLATILITY_3M")),
+        "riskFreeRate": risk_free_rate,
+        "historyVolatility": history_volatility,
         "expiryDate": info.get("exerciseEndDate") or info.get("lastTradingDate") or "",
     }
-    yuanta_calc_params = build_yuanta_calc_params(info, yuanta, underlying_price)
-    try:
-        fair_from_yuanta = fetch_yuanta_quote_price(yuanta_calc_params) if yuanta_calc_params else None
-    except Exception:
-        fair_from_yuanta = None
+    yuanta_calc_params = build_yuanta_calc_params(info, yuanta, underlying_price) if issuer == "yuanta" else None
+    fair_from_yuanta = None
+    if issuer == "yuanta":
+        try:
+            fair_from_yuanta = fetch_yuanta_quote_price(yuanta_calc_params) if yuanta_calc_params else None
+        except Exception as error:
+            yuanta_error = str(error)
     kgi_calc_params: dict[str, Any] = {}
     fair_from_kgi = None
-    if fair_from_yuanta is None:
+    if issuer == "kgi":
         try:
-            kgi_warrant = fetch_kgi_warrant(normalized)
             kgi_calc_params = build_kgi_calc_params_from_warrant(kgi_warrant or {}, underlying_price) or {}
             fair_from_kgi = fetch_kgi_theoretical_price(kgi_calc_params)
-        except Exception:
+        except Exception as error:
+            kgi_error = str(error)
             fair_from_kgi = None
 
     market_reference = quote_reference(quote)
@@ -731,6 +926,7 @@ def load_warrant(code: str, existing: dict[str, Any] | None = None) -> dict[str,
         "id": (existing or {}).get("id") or str(uuid.uuid4()),
         "code": info.get("code") or normalized,
         "name": info.get("name") or "",
+        "issuer": issuer,
         "type": info.get("warrantType") or "call",
         "expiry": pricing["expiryDate"],
         "strike": info.get("strike"),
@@ -753,13 +949,26 @@ def load_warrant(code: str, existing: dict[str, Any] | None = None) -> dict[str,
         "updatedAt": int(time.time() * 1000),
         "error": "",
     }
-    item["fairPrice"] = fair_from_yuanta if fair_from_yuanta is not None else fair_from_kgi
-    if fair_from_yuanta is not None:
-        item["fairPriceSource"] = "元大合理價"
-    elif fair_from_kgi is not None:
-        item["fairPriceSource"] = "凱基理論價"
+    if issuer == "yuanta":
+        item["fairPrice"] = fair_from_yuanta
+    elif issuer == "kgi":
+        item["fairPrice"] = fair_from_kgi
     else:
-        item["fairPriceSource"] = "理論價抓取失敗"
+        item["fairPrice"] = None
+
+    if issuer == "yuanta" and fair_from_yuanta is not None:
+        item["fairPriceSource"] = "元大合理價"
+    elif issuer == "kgi" and fair_from_kgi is not None:
+        item["fairPriceSource"] = "凱基理論價"
+    elif issuer == "yuanta":
+        item["fairPriceSource"] = "元大合理價抓取失敗"
+        item["error"] = yuanta_error or "元大合理價抓取失敗"
+    elif issuer == "kgi":
+        item["fairPriceSource"] = "凱基理論價抓取失敗"
+        item["error"] = kgi_error or "凱基理論價抓取失敗"
+    else:
+        item["fairPriceSource"] = "不支援券商"
+        item["error"] = "目前只支援元大與凱基權證理論價"
     item["simulatedPrice"] = None
     item["impliedSpot"] = None
     return item
@@ -769,29 +978,20 @@ def fair_price_for_spot(item: dict[str, Any], spot: Any) -> float | None:
     spot_value = to_number(spot)
     if spot_value is None:
         return None
-    try:
-        yuanta_price = fetch_yuanta_price_for_item(item, spot_value)
-    except Exception:
-        yuanta_price = None
-    if yuanta_price is not None:
-        return yuanta_price
-    try:
+    issuer = warrant_issuer(item)
+    if issuer == "yuanta":
+        return fetch_yuanta_price_for_item(item, spot_value)
+    if issuer == "kgi":
         return fetch_kgi_price_for_item(item, spot_value)
-    except Exception:
-        return None
+    return None
 
 
-def read_saved_items() -> list[dict[str, Any]]:
-    if not SAVE_PATH.exists():
-        return []
+def read_cloud_items() -> list[dict[str, Any]]:
     try:
-        payload = json.loads(SAVE_PATH.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+        items = read_supabase_items()
+    except Exception as error:
+        st.error(f"Supabase 清單讀取失敗：{error}")
         return []
-    if isinstance(payload, list):
-        items = payload
-    else:
-        items = payload.get("items") or []
     valid_items: list[dict[str, Any]] = []
     for item in items:
         if isinstance(item, dict) and item.get("code"):
@@ -813,9 +1013,8 @@ def item_without_calculations(item: dict[str, Any]) -> dict[str, Any]:
     return payload
 
 
-def write_saved_items(items: list[dict[str, Any]]) -> None:
-    payload = [item_without_calculations(item) for item in items]
-    SAVE_PATH.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+def write_cloud_items(items: list[dict[str, Any]]) -> None:
+    write_supabase_items(items)
 
 
 def recalculate_derived_prices(item: dict[str, Any]) -> dict[str, Any]:
@@ -999,11 +1198,11 @@ def detail_html(item: dict[str, Any]) -> str:
 
 
 def persist_current_items() -> None:
-    write_saved_items(st.session_state["items"])
+    write_cloud_items(st.session_state["items"])
 
 
 def clear_realtime_caches() -> None:
-    for cached_fetch in (fetch_quote, fetch_yuanta_warrant, fetch_yuanta_quote_price):
+    for cached_fetch in (fetch_quote, fetch_yuanta_warrant, fetch_yuanta_quote_price, fetch_kgi_service):
         try:
             cached_fetch.clear()
         except Exception:
@@ -2068,7 +2267,7 @@ def render_mobile_controls() -> None:
                 except Exception as error:
                     st.error(str(error))
         st.markdown(
-            f'<div class="mobile-version">{html.escape(app_version_text())}</div>',
+            f'<div class="mobile-version">{html.escape(app_version_text())} · 儲存 {html.escape(storage_label())}</div>',
             unsafe_allow_html=True,
         )
 
@@ -2081,6 +2280,7 @@ def render_sidebar() -> None:
             f'<div class="app-version">{html.escape(app_version_text())}</div>',
             unsafe_allow_html=True,
         )
+        st.caption(f"儲存: {storage_label()}")
 
         with st.form("add_warrant_form", clear_on_submit=True):
             code = st.text_input("權證代號", placeholder="例如 030012").strip().upper()
@@ -2107,7 +2307,7 @@ def main() -> None:
     st.set_page_config(page_title="權證合理價", layout="wide", initial_sidebar_state="expanded")
     inject_css()
     if "items" not in st.session_state:
-        st.session_state["items"] = read_saved_items()
+        st.session_state["items"] = read_cloud_items()
     sync_session_version()
     reset_calculation_state_once()
     render_sidebar()
