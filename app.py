@@ -33,7 +33,7 @@ YUANTA_QUOTE = "https://www.warrantwin.com.tw/eyuanta/ws/Quote.ashx"
 KGI_SERVICE = "https://warrant.kgi.com/EDWebService/WSInterfaceSwap.asmx/GetService"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.3a"
+APP_VERSION = "W1.0.3b"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
@@ -1833,9 +1833,29 @@ def inject_css() -> None:
           color: var(--faint);
           font-size: 0.76rem;
           line-height: 1.2;
-          margin-top: -0.18rem;
+          margin-top: 0.2rem;
           margin-bottom: 0.35rem;
           text-align: center;
+        }
+        .sidebar-status {
+          display: flex;
+          align-items: center;
+          gap: 0.38rem;
+          min-width: 0;
+        }
+        .sidebar-status span {
+          color: var(--muted);
+          font-size: 0.98rem;
+          line-height: 1;
+          font-weight: 850;
+          white-space: nowrap;
+        }
+        .sidebar-status strong {
+          color: var(--ink);
+          font-size: 0.98rem;
+          line-height: 1;
+          font-weight: 850;
+          white-space: nowrap;
         }
         .app-version,
         .mobile-version {
@@ -2494,12 +2514,21 @@ def render_sidebar() -> None:
             except Exception as error:
                 st.error(str(error))
 
-        st.metric("已儲存", len(st.session_state["items"]))
-        if st.button("更新價格", use_container_width=True, disabled=not st.session_state["items"]):
-            try:
-                refresh_all_prices()
-            except Exception as error:
-                st.error(str(error))
+        status_cols = st.columns([0.42, 0.58], gap="small")
+        with status_cols[0]:
+            st.markdown(
+                '<div class="sidebar-status">'
+                '<span>已儲存</span>'
+                f'<strong>{len(st.session_state["items"])}</strong>'
+                "</div>",
+                unsafe_allow_html=True,
+            )
+        with status_cols[1]:
+            if st.button("更新價格", use_container_width=True, disabled=not st.session_state["items"]):
+                try:
+                    refresh_all_prices()
+                except Exception as error:
+                    st.error(str(error))
         st.markdown(
             f'<div class="sidebar-update-time">最近更新 {html.escape(latest_update_text(st.session_state["items"]))}</div>',
             unsafe_allow_html=True,
