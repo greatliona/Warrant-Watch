@@ -33,7 +33,7 @@ YUANTA_QUOTE = "https://www.warrantwin.com.tw/eyuanta/ws/Quote.ashx"
 KGI_SERVICE = "https://warrant.kgi.com/EDWebService/WSInterfaceSwap.asmx/GetService"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.4a"
+APP_VERSION = "W1.0.4b"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
@@ -1450,7 +1450,7 @@ def error_note_html(message: Any) -> str:
     text = str(message or "").strip()
     if not text:
         return ""
-    return f'<div class="card-error-note">{html.escape(text)}</div>'
+    return f'<div class="card-error-note">* {html.escape(text)}</div>'
 
 
 def detail_line(label: str, value: str) -> None:
@@ -1918,10 +1918,10 @@ def inject_css() -> None:
         }
         .card-actions {
           display: grid;
-          align-content: center;
+          align-content: start;
           justify-items: center;
           gap: 0.36rem;
-          padding-top: 0.12rem;
+          padding-top: 1.04rem;
         }
         div[class*="st-key-card_action_"],
         div[class*="st-key-delete_"] {
@@ -1979,14 +1979,12 @@ def inject_css() -> None:
           white-space: nowrap;
         }
         .card-error-note {
-          width: 36%;
-          min-width: 14rem;
-          max-width: 22rem;
-          margin: 0.48rem 0 0.46rem;
-          border-radius: 8px;
-          background: rgba(128, 126, 58, 0.48);
-          color: var(--ink);
-          padding: 0.3rem 0.46rem;
+          box-sizing: border-box;
+          width: max-content;
+          max-width: min(18rem, 100%);
+          margin: 0.42rem 0 0.48rem;
+          color: var(--muted);
+          padding: 0;
           font-size: 0.68rem;
           line-height: 1.25;
           font-weight: 750;
@@ -2282,10 +2280,11 @@ def inject_css() -> None:
           }
           div[class*="st-key-mobile_actions_"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stVerticalBlock"] {
             display: grid !important;
-            align-content: center !important;
+            align-content: start !important;
             justify-items: center !important;
             gap: 0.34rem !important;
             min-height: 7.1rem;
+            padding-top: 1.05rem;
           }
           div[class*="st-key-mobile_action_"],
           div[class*="st-key-mobile_delete_"] {
@@ -2306,12 +2305,13 @@ def inject_css() -> None:
             color: var(--danger);
           }
           .card-error-note {
-            width: 100%;
+            box-sizing: border-box;
+            width: max-content;
             min-width: 0;
-            max-width: none;
+            max-width: 100%;
             margin: 0.42rem 0 0.08rem;
             font-size: 0.66rem;
-            padding: 0.3rem 0.4rem;
+            padding: 0;
           }
         }
         @media (min-width: 901px) {
