@@ -33,7 +33,7 @@ YUANTA_QUOTE = "https://www.warrantwin.com.tw/eyuanta/ws/Quote.ashx"
 KGI_SERVICE = "https://warrant.kgi.com/EDWebService/WSInterfaceSwap.asmx/GetService"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.4b"
+APP_VERSION = "W1.0.4c"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
@@ -1921,7 +1921,7 @@ def inject_css() -> None:
           align-content: start;
           justify-items: center;
           gap: 0.36rem;
-          padding-top: 1.04rem;
+          padding-top: 1.38rem;
         }
         div[class*="st-key-card_action_"],
         div[class*="st-key-delete_"] {
@@ -2172,7 +2172,7 @@ def inject_css() -> None:
             margin-bottom: 0.54rem;
           }
           div[class*="st-key-mobile_card_"] {
-            margin-bottom: 0.62rem;
+            margin-bottom: 0.78rem;
             border-radius: 8px;
             background: var(--surface);
           }
@@ -2180,7 +2180,7 @@ def inject_css() -> None:
             border: 1px solid var(--line) !important;
             background: var(--surface) !important;
             border-radius: 8px !important;
-            padding: 0.58rem 0.56rem 0.62rem !important;
+            padding: 0.58rem 0.56rem 0.8rem !important;
           }
           div[class*="st-key-mobile_card_"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] {
             display: grid !important;
@@ -2284,7 +2284,7 @@ def inject_css() -> None:
             justify-items: center !important;
             gap: 0.34rem !important;
             min-height: 7.1rem;
-            padding-top: 1.05rem;
+            padding-top: 1.52rem;
           }
           div[class*="st-key-mobile_action_"],
           div[class*="st-key-mobile_delete_"] {
@@ -2309,7 +2309,7 @@ def inject_css() -> None:
             width: max-content;
             min-width: 0;
             max-width: 100%;
-            margin: 0.42rem 0 0.08rem;
+            margin: 0.28rem 0 0.36rem;
             font-size: 0.66rem;
             padding: 0;
           }
