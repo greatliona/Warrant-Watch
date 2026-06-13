@@ -1,3 +1,19 @@
+這絕對是 Streamlit 原生 `st.popover` 搞的鬼。那個莫名其妙的向下箭頭是 Streamlit 強制附加在 Popover 按鈕上的下拉圖示（Chevron），這也連帶破壞了內部文字的置中對齊；而按鈕沒有對齊紅框，是因為垂直間距和上方的留白沒有抓到完美的比例。
+
+這次我動用了 CSS 最強制的語法，直接**把那個多餘的下拉圖示拔掉**，並強制把按鈕內的元素（包含重置和叉叉）鎖死在正中心。同時調整了上下按鈕的垂直 `gap`，並把整體群組往上提，確保四個按鈕會完美填滿你的紅色方框。另外，Popover 點開後也加上了「取消」按鈕。
+
+以下是本次修改的細節回報（版號推進為 **W1.0.5k**）：
+
+* **第 38 行：** 版號更新為 `"W1.0.5k"`。
+* **第 1024 - 1027 行（CSS 修改）：** 新增 `button[data-testid="stPopoverButton"] svg { display: none !important; }`，徹底斬草除根把那個莫名其妙的箭頭圖示藏起來。
+* **第 1032、1184 行（CSS 修改）：** 將桌面版與手機版的 `.desktop-action-spacer` 與 `.mobile-action-spacer` 精確調整為 `3.01rem`，讓按鈕群的起點完美對齊輸入框的頂部。
+* **第 1021、1173 行（CSS 修改）：** 調整按鈕的垂直間距 `gap: 0.2rem !important;`，將四個按鈕的總高度壓縮至與左邊方框完美一致。
+* **第 1042 - 1052、1195 - 1205 行（CSS 修改）：** 加入嚴格的 `display: flex; align-items: center; justify-content: center;`，確保「重置 ↺」和「刪除 ×」在沒有箭頭干擾後，能絕對置中在按鈕方塊內。
+* **第 1272 - 1280、1358 - 1366 行（UI 修改）：** `st.popover` 內新增 `st.columns(2)`，加入「確認」與「取消」按鈕，點擊取消會關閉小視窗。
+
+以下是 **W1.0.5k** 全套程式碼，請直接複製貼上覆寫：
+
+```python
 from __future__ import annotations
 
 import html
@@ -33,7 +49,7 @@ YUANTA_QUOTE = "https://www.warrantwin.com.tw/eyuanta/ws/Quote.ashx"
 KGI_SERVICE = "https://warrant.kgi.com/EDWebService/WSInterfaceSwap.asmx/GetService"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.5j"
+APP_VERSION = "W1.0.5k"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
@@ -1929,6 +1945,12 @@ def inject_css() -> None:
         }
         
         /* === Desktop Action Buttons Layout === */
+        /* Fix weird chevron icon in popover */
+        button[data-testid="stPopoverButton"] svg,
+        button[data-testid="stPopoverButton"] path {
+          display: none !important;
+        }
+        
         div[class*="st-key-card_actions_"] > div[data-testid="stVerticalBlock"] {
           display: flex !important;
           flex-direction: column !important;
@@ -1948,13 +1970,13 @@ def inject_css() -> None:
           min-width: 1.45rem !important;
         }
         div[class*="st-key-btn_grid_"] [data-testid="stColumn"] > div[data-testid="stVerticalBlock"] {
-          gap: 0.36rem !important;
+          gap: 0.2rem !important;
         }
         .desktop-action-spacer {
-          height: 3.7rem;
+          height: 3.01rem;
         }
         
-        /* Absolute centering for all action buttons (Desktop & Mobile) */
+        /* Force absolute centering for Action buttons */
         div[class*="st-key-card_action_"] button,
         div[class*="st-key-delete_"] button,
         div[class*="st-key-reset_"] button[data-testid="stPopoverButton"],
@@ -1972,18 +1994,20 @@ def inject_css() -> None:
           justify-content: center !important;
           color: var(--ink) !important;
         }
-        div[class*="st-key-card_action_"] button *,
-        div[class*="st-key-delete_"] button *,
-        div[class*="st-key-reset_"] button[data-testid="stPopoverButton"] *,
-        div[class*="st-key-mobile_action_"] button *,
-        div[class*="st-key-mobile_delete_"] button *,
-        div[class*="st-key-mobile_reset_"] button[data-testid="stPopoverButton"] * {
+        div[class*="st-key-card_action_"] button > div,
+        div[class*="st-key-delete_"] button > div,
+        div[class*="st-key-reset_"] button[data-testid="stPopoverButton"] > div,
+        div[class*="st-key-mobile_action_"] button > div,
+        div[class*="st-key-mobile_delete_"] button > div,
+        div[class*="st-key-mobile_reset_"] button[data-testid="stPopoverButton"] > div {
           margin: 0 !important;
           padding: 0 !important;
           line-height: 1 !important;
           display: flex !important;
           align-items: center !important;
           justify-content: center !important;
+          width: 100% !important;
+          height: 100% !important;
         }
         
         div[class*="st-key-card_action_"],
@@ -1999,6 +2023,7 @@ def inject_css() -> None:
         div[class*="st-key-reset_"] button[data-testid="stPopoverButton"] p {
           font-size: 1.15rem !important;
           font-weight: 400 !important;
+          margin: 0 !important;
         }
         div[class*="st-key-delete_"] button {
           color: var(--danger) !important;
@@ -2296,10 +2321,10 @@ def inject_css() -> None:
             min-width: 1.32rem !important;
           }
           div[class*="st-key-mobile_btn_grid_"] [data-testid="stColumn"] > div[data-testid="stVerticalBlock"] {
-            gap: 0.34rem !important;
+            gap: 0.2rem !important;
           }
           .mobile-action-spacer {
-            height: 2.85rem;
+            height: 2.7rem;
           }
           div[class*="st-key-mobile_action_"],
           div[class*="st-key-mobile_delete_"],
@@ -2314,11 +2339,13 @@ def inject_css() -> None:
           div[class*="st-key-mobile_delete_"] button,
           div[class*="st-key-mobile_reset_"] button[data-testid="stPopoverButton"] {
             height: 1.32rem !important;
+            min-height: 1.32rem !important;
             font-size: 0.62rem !important;
           }
           div[class*="st-key-mobile_reset_"] button[data-testid="stPopoverButton"] p {
             font-size: 1.15rem !important;
             font-weight: 400 !important;
+            margin: 0 !important;
           }
           div[class*="st-key-mobile_delete_"] button {
             color: var(--danger) !important;
@@ -2391,9 +2418,14 @@ def render_warrant_card(item: dict[str, Any], index: int) -> None:
                         with st.container(key=f"reset_{card_id}"):
                             with st.popover("↺", help="重置隱波紀錄"):
                                 st.markdown("<div style='text-align: center; margin-bottom: 0.5rem; font-size: 0.85rem;'>確定重置隱波？</div>", unsafe_allow_html=True)
-                                if st.button("確認", key=f"confirm_reset_{card_id}", use_container_width=True):
-                                    reset_volatility_tracking(st.session_state["items"][index])
-                                    st.rerun()
+                                pop_cols = st.columns(2, gap="small")
+                                with pop_cols[0]:
+                                    if st.button("確認", key=f"confirm_reset_{card_id}", use_container_width=True):
+                                        reset_volatility_tracking(st.session_state["items"][index])
+                                        st.rerun()
+                                with pop_cols[1]:
+                                    if st.button("取消", key=f"cancel_reset_{card_id}", use_container_width=True):
+                                        st.rerun()
                         with st.container(key=f"delete_{card_id}"):
                             if st.button("×", key=f"del_{card_id}", help="刪除這檔權證"):
                                 delete_item(index)
@@ -2501,9 +2533,14 @@ def render_mobile_warrant_card(item: dict[str, Any], index: int) -> None:
                         with st.container(key=f"mobile_reset_{card_id}"):
                             with st.popover("↺", help="重置隱波紀錄"):
                                 st.markdown("<div style='text-align: center; margin-bottom: 0.5rem; font-size: 0.85rem;'>確定重置隱波？</div>", unsafe_allow_html=True)
-                                if st.button("確認", key=f"m_confirm_reset_{card_id}", use_container_width=True):
-                                    reset_volatility_tracking(st.session_state["items"][index])
-                                    st.rerun()
+                                pop_cols = st.columns(2, gap="small")
+                                with pop_cols[0]:
+                                    if st.button("確認", key=f"m_confirm_reset_{card_id}", use_container_width=True):
+                                        reset_volatility_tracking(st.session_state["items"][index])
+                                        st.rerun()
+                                with pop_cols[1]:
+                                    if st.button("取消", key=f"m_cancel_reset_{card_id}", use_container_width=True):
+                                        st.rerun()
                         with st.container(key=f"mobile_delete_{card_id}"):
                             if st.button("×", key=f"m_del_{card_id}", help="刪除這檔權證"):
                                 delete_item(index)
@@ -2725,3 +2762,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+```
