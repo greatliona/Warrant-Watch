@@ -1958,7 +1958,6 @@ def inject_css() -> None:
           margin-top: 0.2rem;
           margin-bottom: 0.35rem;
           text-align: center;
-          padding-left: 1.6rem;
         }
         .sidebar-status {
           display: flex;
@@ -2643,7 +2642,7 @@ def render_mobile_controls() -> None:
             st.markdown(
                 '<div class="mobile-status">'
                 f'<span>已儲存 <strong>{len(st.session_state["items"])}</strong> 檔</span>'
-                f'<small>{html.escape(app_version_text())} · 儲存 {html.escape(storage_label())}</small>'
+                f'<small>{html.escape(app_version_text())}<br>儲存 {html.escape(storage_label())}</small>'
                 "</div>",
                 unsafe_allow_html=True,
             )
@@ -2662,12 +2661,14 @@ def render_mobile_controls() -> None:
 def render_sidebar() -> None:
     with st.sidebar:
         st.title("Warrant Watch!")
-        st.caption(f"評價日期: {today_compact()}")
         st.markdown(
-            f'<div class="app-version">{html.escape(app_version_text())}</div>',
+            f'<div class="app-version">'
+            f'評價日期: {today_compact()}<br>'
+            f'{html.escape(app_version_text())}<br>'
+            f'儲存: {html.escape(storage_label())}'
+            f'</div>',
             unsafe_allow_html=True,
         )
-        st.caption(f"儲存: {storage_label()}")
 
         with st.form("add_warrant_form", clear_on_submit=True):
             code = st.text_input("權證代號", placeholder="例如 030012").strip().upper()
@@ -2692,10 +2693,10 @@ def render_sidebar() -> None:
                     refresh_all_prices()
                 except Exception as error:
                     st.error(str(error))
-        st.markdown(
-            f'<div class="sidebar-update-time">最近更新 {html.escape(latest_update_text(st.session_state["items"]))}</div>',
-            unsafe_allow_html=True,
-        )
+            st.markdown(
+                f'<div class="sidebar-update-time">最近更新 {html.escape(latest_update_text(st.session_state["items"]))}</div>',
+                unsafe_allow_html=True,
+            )
 
 
 def main() -> None:
