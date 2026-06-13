@@ -33,7 +33,7 @@ YUANTA_QUOTE = "https://www.warrantwin.com.tw/eyuanta/ws/Quote.ashx"
 KGI_SERVICE = "https://warrant.kgi.com/EDWebService/WSInterfaceSwap.asmx/GetService"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.5e"
+APP_VERSION = "W1.0.5f"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
@@ -1935,7 +1935,7 @@ def inject_css() -> None:
           align-items: center !important;
           gap: 0 !important;
         }
-        div[class*="st-key-btn_grid_"] > div[data-testid="stVerticalBlock"] {
+        div[class*="st-key-btn_grid_"] div[data-testid="stVerticalBlock"]:first-of-type {
           display: grid !important;
           grid-template-columns: 1fr 1fr !important;
           gap: 0.36rem 0.2rem !important;
@@ -1946,8 +1946,7 @@ def inject_css() -> None:
           height: 2.52rem;
         }
         div[class*="st-key-card_action_"],
-        div[class*="st-key-delete_"],
-        div[class*="st-key-reset_"] {
+        div[class*="st-key-delete_"] {
           display: flex;
           align-items: center;
           justify-content: center;
@@ -1956,7 +1955,7 @@ def inject_css() -> None:
         }
         div[class*="st-key-card_action_"] button,
         div[class*="st-key-delete_"] button,
-        div[class*="st-key-reset_"] button[data-testid="stPopoverButton"] {
+        div[class*="st-key-btn_grid_"] button[data-testid="stPopoverButton"] {
           width: 1.45rem !important;
           min-width: 1.45rem !important;
           min-height: 1.45rem !important;
@@ -1969,7 +1968,7 @@ def inject_css() -> None:
           justify-content: center !important;
           color: var(--ink) !important;
         }
-        div[class*="st-key-reset_"] button[data-testid="stPopoverButton"] p {
+        div[class*="st-key-btn_grid_"] button[data-testid="stPopoverButton"] p {
           font-size: 0.8rem !important;
         }
         div[class*="st-key-delete_"] button {
@@ -2242,7 +2241,7 @@ def inject_css() -> None:
             gap: 0 !important;
             min-height: 7.1rem;
           }
-          div[class*="st-key-mobile_btn_grid_"] > div[data-testid="stVerticalBlock"] {
+          div[class*="st-key-mobile_btn_grid_"] div[data-testid="stVerticalBlock"]:first-of-type {
             display: grid !important;
             grid-template-columns: 1fr 1fr !important;
             gap: 0.34rem 0.2rem !important;
@@ -2253,8 +2252,7 @@ def inject_css() -> None:
             height: 3.48rem;
           }
           div[class*="st-key-mobile_action_"],
-          div[class*="st-key-mobile_delete_"],
-          div[class*="st-key-mobile_reset_"] {
+          div[class*="st-key-mobile_delete_"] {
             height: 1.32rem;
             margin: 0 !important;
             display: flex;
@@ -2263,7 +2261,7 @@ def inject_css() -> None:
           }
           div[class*="st-key-mobile_action_"] button,
           div[class*="st-key-mobile_delete_"] button,
-          div[class*="st-key-mobile_reset_"] button[data-testid="stPopoverButton"] {
+          div[class*="st-key-mobile_btn_grid_"] button[data-testid="stPopoverButton"] {
             width: 1.32rem !important;
             min-width: 1.32rem !important;
             min-height: 1.32rem !important;
@@ -2276,7 +2274,7 @@ def inject_css() -> None:
             justify-content: center !important;
             color: var(--ink) !important;
           }
-          div[class*="st-key-mobile_reset_"] button[data-testid="stPopoverButton"] p {
+          div[class*="st-key-mobile_btn_grid_"] button[data-testid="stPopoverButton"] p {
             font-size: 0.7rem !important;
           }
           div[class*="st-key-mobile_delete_"] button {
@@ -2351,12 +2349,11 @@ def render_warrant_card(item: dict[str, Any], index: int) -> None:
                 with st.container(key=f"btn_grid_{card_id}"):
                     if st.button("▲", key=f"card_action_up_{card_id}", disabled=index == 0, help="上移"):
                         move_item(index, -1)
-                    with st.container(key=f"reset_{card_id}"):
-                        with st.popover("↺", help="重置隱波紀錄"):
-                            st.markdown("<div style='text-align: center; margin-bottom: 0.5rem; font-size: 0.85rem;'>確定重置隱波？</div>", unsafe_allow_html=True)
-                            if st.button("確認", key=f"confirm_reset_{card_id}", use_container_width=True):
-                                reset_volatility_tracking(st.session_state["items"][index])
-                                st.rerun()
+                    with st.popover("⟲", help="重置隱波紀錄"):
+                        st.markdown("<div style='text-align: center; margin-bottom: 0.5rem; font-size: 0.85rem;'>確定重置隱波？</div>", unsafe_allow_html=True)
+                        if st.button("確認", key=f"confirm_reset_{card_id}", use_container_width=True):
+                            reset_volatility_tracking(st.session_state["items"][index])
+                            st.rerun()
                     if st.button("▼", key=f"card_action_down_{card_id}", disabled=index == len(st.session_state["items"]) - 1, help="下移"):
                         move_item(index, 1)
                     if st.button("×", key=f"delete_{card_id}", help="刪除這檔權證"):
@@ -2455,12 +2452,11 @@ def render_mobile_warrant_card(item: dict[str, Any], index: int) -> None:
                 with st.container(key=f"mobile_btn_grid_{card_id}"):
                     if st.button("▲", key=f"mobile_action_up_{card_id}", disabled=index == 0, help="上移"):
                         move_item(index, -1)
-                    with st.container(key=f"mobile_reset_{card_id}"):
-                        with st.popover("↺", help="重置隱波紀錄"):
-                            st.markdown("<div style='text-align: center; margin-bottom: 0.5rem; font-size: 0.85rem;'>確定重置隱波？</div>", unsafe_allow_html=True)
-                            if st.button("確認", key=f"mobile_confirm_reset_{card_id}", use_container_width=True):
-                                reset_volatility_tracking(st.session_state["items"][index])
-                                st.rerun()
+                    with st.popover("⟲", help="重置隱波紀錄"):
+                        st.markdown("<div style='text-align: center; margin-bottom: 0.5rem; font-size: 0.85rem;'>確定重置隱波？</div>", unsafe_allow_html=True)
+                        if st.button("確認", key=f"mobile_confirm_reset_{card_id}", use_container_width=True):
+                            reset_volatility_tracking(st.session_state["items"][index])
+                            st.rerun()
                     if st.button("▼", key=f"mobile_action_down_{card_id}", disabled=index == len(st.session_state["items"]) - 1, help="下移"):
                         move_item(index, 1)
                     if st.button("×", key=f"mobile_delete_{card_id}", help="刪除這檔權證"):
