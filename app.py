@@ -33,7 +33,7 @@ YUANTA_QUOTE = "https://www.warrantwin.com.tw/eyuanta/ws/Quote.ashx"
 KGI_SERVICE = "https://warrant.kgi.com/EDWebService/WSInterfaceSwap.asmx/GetService"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.4d"
+APP_VERSION = "W1.0.4e"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
@@ -1923,7 +1923,7 @@ def inject_css() -> None:
           gap: 0.36rem !important;
         }
         .desktop-action-spacer {
-          height: 4.45rem;
+          height: 5.72rem;
         }
         div[class*="st-key-card_action_"],
         div[class*="st-key-delete_"] {
@@ -2004,7 +2004,7 @@ def inject_css() -> None:
         }
         .mobile-version {
           margin-top: 0.26rem;
-          text-align: right;
+          text-align: center;
         }
         .detail-line {
           display: grid;
@@ -2033,6 +2033,7 @@ def inject_css() -> None:
         .mobile-status {
           display: flex;
           align-items: baseline;
+          justify-content: center;
           gap: 0.42rem;
           min-width: 0;
         }
@@ -2206,6 +2207,17 @@ def inject_css() -> None:
           .metric-value {
             font-size: 0.9rem;
           }
+          .mobile-metrics .metric-box,
+          .mobile-metrics .metric-label,
+          .mobile-metrics .metric-value {
+            text-align: center;
+          }
+          .mobile-metrics .metric-label {
+            font-size: 0.64rem;
+          }
+          .mobile-metrics .metric-value {
+            font-size: 0.86rem;
+          }
           div[class*="st-key-mobile_calc_row_"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] {
             display: grid !important;
             grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
@@ -2288,7 +2300,7 @@ def inject_css() -> None:
             min-height: 7.1rem;
           }
           .mobile-action-spacer {
-            height: 5.15rem;
+            height: 6.32rem;
           }
           div[class*="st-key-mobile_action_"],
           div[class*="st-key-mobile_delete_"] {
