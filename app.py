@@ -33,7 +33,7 @@ YUANTA_QUOTE = "https://www.warrantwin.com.tw/eyuanta/ws/Quote.ashx"
 KGI_SERVICE = "https://warrant.kgi.com/EDWebService/WSInterfaceSwap.asmx/GetService"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.5"
+APP_VERSION = "W1.0.5a"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
@@ -1649,7 +1649,8 @@ def inject_css() -> None:
         section[data-testid="stSidebar"] [data-testid="stCaptionContainer"],
         section[data-testid="stSidebar"] label,
         section[data-testid="stSidebar"] [data-testid="stMetricLabel"] {
-          color: var(--muted);
+          color: var(--faint);
+          font-size: 0.68rem;
         }
         div[data-testid="stTextInput"] input,
         div[data-testid="stNumberInput"] input {
@@ -1923,7 +1924,7 @@ def inject_css() -> None:
           gap: 0.36rem !important;
         }
         .desktop-action-spacer {
-          height: 2.59rem;
+          height: 2.52rem;
         }
         div[class*="st-key-card_action_"],
         div[class*="st-key-delete_"] {
@@ -1957,6 +1958,7 @@ def inject_css() -> None:
           margin-top: 0.2rem;
           margin-bottom: 0.35rem;
           text-align: center;
+          padding-left: 1.6rem;
         }
         .sidebar-status {
           display: flex;
@@ -2034,15 +2036,17 @@ def inject_css() -> None:
         }
         .mobile-status {
           display: flex;
-          align-items: baseline;
+          flex-direction: column;
+          align-items: center;
           justify-content: center;
-          gap: 0.22rem;
+          gap: 0.15rem;
           min-width: 0;
+          margin: 0.2rem 0;
+          line-height: 1.2;
         }
         .mobile-status span {
           color: var(--muted);
           font-size: 0.74rem;
-          line-height: 1.05;
           white-space: normal;
           text-align: center;
         }
@@ -2055,7 +2059,6 @@ def inject_css() -> None:
         .mobile-status small {
           color: var(--faint);
           font-size: 0.66rem;
-          line-height: 1;
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: normal;
@@ -2638,9 +2641,9 @@ def render_mobile_controls() -> None:
                         st.error(str(error))
         with control_cols[1]:
             st.markdown(
-                '<div class="mobile-status" style="display: flex; flex-direction: column; align-items: center; gap: 0.1rem; line-height: 1.2;">'
-                f'<span style="white-space: normal; text-align: center;">已儲存 <strong>{len(st.session_state["items"])}</strong> 檔</span>'
-                f'<small style="color: var(--faint); font-size: 0.65rem; white-space: normal; text-align: center;">{html.escape(app_version_text())} · 儲存 {html.escape(storage_label())}</small>'
+                '<div class="mobile-status">'
+                f'<span>已儲存 <strong>{len(st.session_state["items"])}</strong> 檔</span>'
+                f'<small>{html.escape(app_version_text())} · 儲存 {html.escape(storage_label())}</small>'
                 "</div>",
                 unsafe_allow_html=True,
             )
