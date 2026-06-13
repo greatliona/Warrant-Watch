@@ -32,7 +32,7 @@ YUANTA_QUOTE = "https://www.warrantwin.com.tw/eyuanta/ws/Quote.ashx"
 KGI_SERVICE = "https://warrant.kgi.com/EDWebService/WSInterfaceSwap.asmx/GetService"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.2g"
+APP_VERSION = "W1.0.2h"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
@@ -157,6 +157,17 @@ def supabase_endpoint(config: dict[str, str]) -> str:
     return f"{config['url']}/rest/v1/{config['table']}"
 
 
+def response_json(response: requests.Response, source: str) -> Any:
+    text = response.text.strip()
+    if not text:
+        raise WarrantError(f"{source} 回傳空資料")
+    try:
+        return response.json()
+    except ValueError as error:
+        preview = text[:120].replace("\n", " ")
+        raise WarrantError(f"{source} 回傳格式不是 JSON：{preview}") from error
+
+
 def read_supabase_items() -> list[dict[str, Any]]:
     config = supabase_config()
     if not config:
@@ -172,7 +183,7 @@ def read_supabase_items() -> list[dict[str, Any]]:
         timeout=12,
     )
     response.raise_for_status()
-    rows = response.json()
+    rows = response_json(response, "Supabase 清單")
     if not rows:
         return []
     items = rows[0].get("items") or []
@@ -188,24 +199,14 @@ def write_supabase_items(items: list[dict[str, Any]]) -> bool:
         "items": [item_without_calculations(item) for item in items],
         "updated_at": datetime.now(TAIPEI).isoformat(),
     }
-    patch_response = requests.patch(
+    response = requests.post(
         supabase_endpoint(config),
-        headers=supabase_headers(config, prefer="return=representation"),
-        params={"profile_id": f"eq.{config['profile_id']}"},
-        json={"items": payload["items"], "updated_at": payload["updated_at"]},
-        timeout=12,
-    )
-    patch_response.raise_for_status()
-    updated_rows = patch_response.json() if patch_response.text else []
-    if updated_rows:
-        return True
-    post_response = requests.post(
-        supabase_endpoint(config),
-        headers=supabase_headers(config, prefer="return=minimal"),
+        headers=supabase_headers(config, prefer="resolution=merge-duplicates,return=minimal"),
+        params={"on_conflict": "profile_id"},
         json=payload,
         timeout=12,
     )
-    post_response.raise_for_status()
+    response.raise_for_status()
     return True
 
 
@@ -221,7 +222,7 @@ def split_book(value: Any) -> list[float]:
 def fetch_json(url: str, *, method: str = "GET", data: dict[str, str] | None = None) -> Any:
     response = requests.request(method, url, headers=HEADERS, data=data, timeout=15)
     response.raise_for_status()
-    return response.json()
+    return response_json(response, url)
 
 
 def normalize_quote(raw: dict[str, Any], requested_market: str, requested_code: str) -> dict[str, Any] | None:
@@ -342,7 +343,7 @@ def fetch_yuanta_warrant(code: str) -> dict[str, Any] | None:
         timeout=15,
     )
     response.raise_for_status()
-    data = response.json()
+    data = response_json(response, "元大權證資料")
     result = data.get("result") or []
     return result[0] if result else None
 
@@ -825,6 +826,8 @@ def load_warrant(code: str, existing: dict[str, Any] | None = None) -> dict[str,
     normalized = str(code or "").strip().upper()
     if not re.fullmatch(r"[0-9A-Z]+", normalized):
         raise WarrantError("請輸入有效權證代號")
+    if re.fullmatch(r"\d{4}", normalized):
+        raise WarrantError("請輸入權證代號，不是股票代號；例如 068562")
 
     info = info_from_existing_item(normalized, existing) or find_warrant_info(normalized)
     if not info:
