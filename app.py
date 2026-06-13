@@ -33,7 +33,7 @@ YUANTA_QUOTE = "https://www.warrantwin.com.tw/eyuanta/ws/Quote.ashx"
 KGI_SERVICE = "https://warrant.kgi.com/EDWebService/WSInterfaceSwap.asmx/GetService"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.5k"
+APP_VERSION = "W1.0.5l"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
@@ -1952,24 +1952,25 @@ def inject_css() -> None:
           flex: 0 0 1.45rem !important;
           width: 1.45rem !important;
           min-width: 1.45rem !important;
+          padding: 0 !important;
         }
         div[class*="st-key-btn_grid_"] [data-testid="stColumn"] > div[data-testid="stVerticalBlock"] {
           gap: 0.2rem !important;
         }
         .desktop-action-spacer {
-          height: 3.01rem;
+          height: 3.1rem;
         }
         
         /* Force absolute centering for Action buttons */
         div[class*="st-key-card_action_"] button,
         div[class*="st-key-delete_"] button,
-        div[class*="st-key-reset_"] button[data-testid="stPopoverButton"],
-        div[class*="st-key-mobile_action_"] button,
-        div[class*="st-key-mobile_delete_"] button,
-        div[class*="st-key-mobile_reset_"] button[data-testid="stPopoverButton"] {
-          width: 100% !important;
+        div[class*="st-key-reset_"] button[data-testid="stPopoverButton"] {
+          width: 1.45rem !important;
+          min-width: 1.45rem !important;
+          max-width: 1.45rem !important;
           height: 1.45rem !important;
           min-height: 1.45rem !important;
+          max-height: 1.45rem !important;
           padding: 0 !important;
           margin: 0 !important;
           border-radius: 6px !important;
@@ -1977,21 +1978,24 @@ def inject_css() -> None:
           align-items: center !important;
           justify-content: center !important;
           color: var(--ink) !important;
+          box-sizing: border-box !important;
         }
-        div[class*="st-key-card_action_"] button > div,
-        div[class*="st-key-delete_"] button > div,
-        div[class*="st-key-reset_"] button[data-testid="stPopoverButton"] > div,
-        div[class*="st-key-mobile_action_"] button > div,
-        div[class*="st-key-mobile_delete_"] button > div,
-        div[class*="st-key-mobile_reset_"] button[data-testid="stPopoverButton"] > div {
+        /* Strip popover auto-width wrapper */
+        div[class*="st-key-reset_"] div[data-testid="stPopover"] {
+            width: 1.45rem !important;
+            min-width: 1.45rem !important;
+            max-width: 1.45rem !important;
+        }
+        
+        div[class*="st-key-card_action_"] button *,
+        div[class*="st-key-delete_"] button *,
+        div[class*="st-key-reset_"] button[data-testid="stPopoverButton"] * {
           margin: 0 !important;
           padding: 0 !important;
           line-height: 1 !important;
           display: flex !important;
           align-items: center !important;
           justify-content: center !important;
-          width: 100% !important;
-          height: 100% !important;
         }
         
         div[class*="st-key-card_action_"],
@@ -2007,10 +2011,17 @@ def inject_css() -> None:
         div[class*="st-key-reset_"] button[data-testid="stPopoverButton"] p {
           font-size: 1.15rem !important;
           font-weight: 400 !important;
-          margin: 0 !important;
         }
         div[class*="st-key-delete_"] button {
           color: var(--danger) !important;
+        }
+        
+        /* Strictly limit the right container width for desktop */
+        div[class*="st-key-card_"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-child(2) {
+            flex: 0 0 3.1rem !important;
+            width: 3.1rem !important;
+            min-width: 3.1rem !important;
+            max-width: 3.1rem !important;
         }
         
         .card-error-note {
@@ -2178,9 +2189,11 @@ def inject_css() -> None:
             width: auto !important;
           }
           div[class*="st-key-mobile_card_"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-child(2) {
-            flex: 0 0 2.95rem !important;
-            width: 2.95rem !important;
-            min-width: 2.95rem !important;
+            flex: 0 0 2.84rem !important; /* Fixed width strictly for buttons */
+            width: 2.84rem !important;
+            min-width: 2.84rem !important;
+            max-width: 2.84rem !important;
+            padding: 0 !important;
           }
           
           .native-detail-popover summary {
@@ -2205,23 +2218,29 @@ def inject_css() -> None:
           .mobile-metrics .metric-value {
             font-size: 0.86rem;
           }
+          
+          /* Mobile Calc Block Force Split */
           div[class*="st-key-mobile_calc_row_"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] {
-            display: grid !important;
-            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            display: flex !important;
+            flex-direction: row !important;
+            justify-content: space-between !important;
             gap: 0.44rem !important;
+            flex-wrap: nowrap !important;
             align-items: stretch !important;
           }
           div[class*="st-key-mobile_calc_row_"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
-            width: auto !important;
+            width: 48% !important;
+            flex: 0 0 48% !important;
             min-width: 0 !important;
-            flex: none !important;
           }
+          
           div[class*="st-key-mobile_calc_forward_"],
           div[class*="st-key-mobile_calc_reverse_"] {
             border-radius: 8px;
             border: 1px solid;
             min-height: 3.35rem;
             padding: 0.38rem 0.38rem 0.34rem;
+            width: 100% !important;
           }
           div[class*="st-key-mobile_calc_forward_"] {
             background: var(--blue-soft);
@@ -2303,33 +2322,65 @@ def inject_css() -> None:
             flex: 0 0 1.32rem !important;
             width: 1.32rem !important;
             min-width: 1.32rem !important;
+            max-width: 1.32rem !important;
+            padding: 0 !important;
           }
           div[class*="st-key-mobile_btn_grid_"] [data-testid="stColumn"] > div[data-testid="stVerticalBlock"] {
             gap: 0.2rem !important;
           }
           .mobile-action-spacer {
-            height: 2.7rem;
+            height: 2.85rem;
           }
-          div[class*="st-key-mobile_action_"],
-          div[class*="st-key-mobile_delete_"],
-          div[class*="st-key-mobile_reset_"] {
-            height: 1.32rem;
-            margin: 0 !important;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-          }
+          
+          /* Strict Box Sizing for all mobile buttons to prevent expanding */
           div[class*="st-key-mobile_action_"] button,
           div[class*="st-key-mobile_delete_"] button,
           div[class*="st-key-mobile_reset_"] button[data-testid="stPopoverButton"] {
+            width: 1.32rem !important;
+            min-width: 1.32rem !important;
+            max-width: 1.32rem !important;
             height: 1.32rem !important;
             min-height: 1.32rem !important;
+            max-height: 1.32rem !important;
             font-size: 0.62rem !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            border-radius: 6px !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            color: var(--ink) !important;
+            box-sizing: border-box !important;
+          }
+          /* Strip popover auto-width wrapper */
+          div[class*="st-key-mobile_reset_"] div[data-testid="stPopover"] {
+            width: 1.32rem !important;
+            min-width: 1.32rem !important;
+            max-width: 1.32rem !important;
+          }
+          div[class*="st-key-mobile_action_"] button *,
+          div[class*="st-key-mobile_delete_"] button *,
+          div[class*="st-key-mobile_reset_"] button[data-testid="stPopoverButton"] * {
+            margin: 0 !important;
+            padding: 0 !important;
+            line-height: 1 !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+          }
+          
+          div[class*="st-key-mobile_action_"],
+          div[class*="st-key-mobile_delete_"],
+          div[class*="st-key-mobile_reset_"] {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 1.32rem;
+            margin: 0 !important;
           }
           div[class*="st-key-mobile_reset_"] button[data-testid="stPopoverButton"] p {
-            font-size: 1.15rem !important;
+            font-size: 1.05rem !important;
             font-weight: 400 !important;
-            margin: 0 !important;
           }
           div[class*="st-key-mobile_delete_"] button {
             color: var(--danger) !important;
