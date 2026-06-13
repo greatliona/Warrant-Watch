@@ -33,7 +33,7 @@ YUANTA_QUOTE = "https://www.warrantwin.com.tw/eyuanta/ws/Quote.ashx"
 KGI_SERVICE = "https://warrant.kgi.com/EDWebService/WSInterfaceSwap.asmx/GetService"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.5d"
+APP_VERSION = "W1.0.5c"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
@@ -1924,22 +1924,22 @@ def inject_css() -> None:
           gap: 0.36rem !important;
         }
         .desktop-action-spacer {
-          height: 3.12rem;
+          height: 2.52rem;
         }
         div[class*="st-key-card_action_"],
         div[class*="st-key-delete_"] {
           display: flex;
           align-items: center;
           justify-content: center;
-          height: 1.25rem;
+          height: 1.45rem;
           margin: 0 !important;
         }
         div[class*="st-key-card_action_"] button,
-        div[class*="st-key-delete_"] button[data-testid="stPopoverButton"] {
-          width: 1.25rem;
-          min-width: 1.25rem;
-          min-height: 1.25rem;
-          height: 1.25rem;
+        div[class*="st-key-delete_"] button {
+          width: 1.45rem;
+          min-width: 1.45rem;
+          min-height: 1.45rem;
+          height: 1.45rem;
           padding: 0;
           border-radius: 6px;
           font-size: 0.7rem;
@@ -1948,7 +1948,7 @@ def inject_css() -> None:
           align-items: center;
           justify-content: center;
         }
-        div[class*="st-key-delete_"] button[data-testid="stPopoverButton"] {
+        div[class*="st-key-delete_"] button {
           color: var(--danger);
         }
         .card-error-note {
@@ -2205,6 +2205,9 @@ def inject_css() -> None:
             min-height: 1.74rem;
             font-size: 0.84rem;
           }
+          div[class*="st-key-mobile_actions_"] {
+            height: 100%;
+          }
           div[class*="st-key-mobile_actions_"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stVerticalBlock"] {
             display: grid !important;
             align-content: start !important;
@@ -2213,27 +2216,24 @@ def inject_css() -> None:
             min-height: 7.1rem;
           }
           .mobile-action-spacer {
-            height: 3.99rem;
+            height: 3.48rem;
           }
           div[class*="st-key-mobile_action_"],
           div[class*="st-key-mobile_delete_"] {
-            height: 1.15rem;
+            height: 1.32rem;
             margin: 0 !important;
           }
           div[class*="st-key-mobile_action_"] button,
-          div[class*="st-key-mobile_delete_"] button[data-testid="stPopoverButton"] {
-            width: 1.15rem;
-            min-width: 1.15rem;
-            min-height: 1.15rem;
-            height: 1.15rem;
+          div[class*="st-key-mobile_delete_"] button {
+            width: 1.32rem;
+            min-width: 1.32rem;
+            min-height: 1.32rem;
+            height: 1.32rem;
             font-size: 0.62rem;
             padding: 0;
             border-radius: 6px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
           }
-          div[class*="st-key-mobile_delete_"] button[data-testid="stPopoverButton"] {
+          div[class*="st-key-mobile_delete_"] button {
             color: var(--danger);
           }
           .card-error-note {
@@ -2305,11 +2305,8 @@ def render_warrant_card(item: dict[str, Any], index: int) -> None:
                     move_item(index, -1)
                 if st.button("▼", key=f"card_action_down_{card_id}", disabled=index == len(st.session_state["items"]) - 1, help="下移"):
                     move_item(index, 1)
-                with st.container(key=f"delete_{card_id}"):
-                    with st.popover("×"):
-                        st.markdown("<div style='font-size:0.8rem; color:var(--ink); margin-bottom:0.5rem; text-align:center;'>確定刪除？</div>", unsafe_allow_html=True)
-                        if st.button("確定", key=f"confirm_{card_id}", use_container_width=True):
-                            delete_item(index)
+                if st.button("×", key=f"delete_{card_id}", help="刪除這檔權證"):
+                    delete_item(index)
 
         with card_cols[0]:
             st.markdown(
@@ -2405,11 +2402,8 @@ def render_mobile_warrant_card(item: dict[str, Any], index: int) -> None:
                     move_item(index, -1)
                 if st.button("▼", key=f"mobile_action_down_{card_id}", disabled=index == len(st.session_state["items"]) - 1, help="下移"):
                     move_item(index, 1)
-                with st.container(key=f"mobile_delete_{card_id}"):
-                    with st.popover("×"):
-                        st.markdown("<div style='font-size:0.8rem; color:var(--ink); margin-bottom:0.5rem; text-align:center;'>確定刪除？</div>", unsafe_allow_html=True)
-                        if st.button("確定", key=f"mobile_confirm_{card_id}", use_container_width=True):
-                            delete_item(index)
+                if st.button("×", key=f"mobile_delete_{card_id}", help="刪除這檔權證"):
+                    delete_item(index)
 
         with card_cols[0]:
             st.markdown(
