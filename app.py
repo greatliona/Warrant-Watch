@@ -33,7 +33,7 @@ YUANTA_QUOTE = "https://www.warrantwin.com.tw/eyuanta/ws/Quote.ashx"
 KGI_SERVICE = "https://warrant.kgi.com/EDWebService/WSInterfaceSwap.asmx/GetService"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.5i"
+APP_VERSION = "W1.0.5j"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
@@ -1936,20 +1936,56 @@ def inject_css() -> None:
           gap: 0 !important;
         }
         div[class*="st-key-btn_grid_"] [data-testid="stHorizontalBlock"] {
-          gap: 0.2rem !important;
-          justify-content: center !important;
+          display: flex !important;
+          flex-direction: row !important;
+          gap: 0 !important;
+          justify-content: space-between !important;
+          width: 100% !important;
         }
         div[class*="st-key-btn_grid_"] [data-testid="stColumn"] {
-          width: auto !important;
-          flex: none !important;
-          min-width: 0 !important;
+          flex: 0 0 1.45rem !important;
+          width: 1.45rem !important;
+          min-width: 1.45rem !important;
         }
         div[class*="st-key-btn_grid_"] [data-testid="stColumn"] > div[data-testid="stVerticalBlock"] {
           gap: 0.36rem !important;
         }
         .desktop-action-spacer {
-          height: 3.1rem;
+          height: 3.7rem;
         }
+        
+        /* Absolute centering for all action buttons (Desktop & Mobile) */
+        div[class*="st-key-card_action_"] button,
+        div[class*="st-key-delete_"] button,
+        div[class*="st-key-reset_"] button[data-testid="stPopoverButton"],
+        div[class*="st-key-mobile_action_"] button,
+        div[class*="st-key-mobile_delete_"] button,
+        div[class*="st-key-mobile_reset_"] button[data-testid="stPopoverButton"] {
+          width: 100% !important;
+          height: 1.45rem !important;
+          min-height: 1.45rem !important;
+          padding: 0 !important;
+          margin: 0 !important;
+          border-radius: 6px !important;
+          display: flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          color: var(--ink) !important;
+        }
+        div[class*="st-key-card_action_"] button *,
+        div[class*="st-key-delete_"] button *,
+        div[class*="st-key-reset_"] button[data-testid="stPopoverButton"] *,
+        div[class*="st-key-mobile_action_"] button *,
+        div[class*="st-key-mobile_delete_"] button *,
+        div[class*="st-key-mobile_reset_"] button[data-testid="stPopoverButton"] * {
+          margin: 0 !important;
+          padding: 0 !important;
+          line-height: 1 !important;
+          display: flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+        }
+        
         div[class*="st-key-card_action_"],
         div[class*="st-key-delete_"],
         div[class*="st-key-reset_"] {
@@ -1959,26 +1995,10 @@ def inject_css() -> None:
           height: 1.45rem;
           margin: 0 !important;
         }
-        div[class*="st-key-card_action_"] button,
-        div[class*="st-key-delete_"] button,
-        div[class*="st-key-reset_"] button[data-testid="stPopoverButton"] {
-          width: 1.45rem !important;
-          min-width: 1.45rem !important;
-          min-height: 1.45rem !important;
-          height: 1.45rem !important;
-          padding: 0 !important;
-          border-radius: 6px !important;
-          font-size: 0.7rem !important;
-          display: inline-flex !important;
-          align-items: center !important;
-          justify-content: center !important;
-          color: var(--ink) !important;
-        }
+        
         div[class*="st-key-reset_"] button[data-testid="stPopoverButton"] p {
           font-size: 1.15rem !important;
-          font-weight: normal !important;
-          line-height: 1 !important;
-          margin: 0 !important;
+          font-weight: 400 !important;
         }
         div[class*="st-key-delete_"] button {
           color: var(--danger) !important;
@@ -2134,17 +2154,26 @@ def inject_css() -> None:
             border-radius: 8px !important;
             padding: 0.58rem 0.56rem 0.8rem !important;
           }
+          
+          /* Strict Card Layout (Left Content vs Right Actions) */
           div[class*="st-key-mobile_card_"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] {
-            display: grid !important;
-            grid-template-columns: minmax(0, 1fr) 2.95rem !important;
+            display: flex !important;
+            flex-direction: row !important;
             gap: 0.42rem !important;
             align-items: stretch !important;
+            flex-wrap: nowrap !important;
           }
-          div[class*="st-key-mobile_card_"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
-            width: auto !important;
+          div[class*="st-key-mobile_card_"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-child(1) {
+            flex: 1 1 auto !important;
             min-width: 0 !important;
-            flex: none !important;
+            width: auto !important;
           }
+          div[class*="st-key-mobile_card_"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-child(2) {
+            flex: 0 0 2.95rem !important;
+            width: 2.95rem !important;
+            min-width: 2.95rem !important;
+          }
+          
           .native-detail-popover summary {
             width: 1.38rem;
             height: 1.38rem;
@@ -2193,19 +2222,23 @@ def inject_css() -> None:
             background: var(--orange-soft);
             border-color: var(--orange-line);
           }
+          
+          /* Strict Calc Block Inner Layout to prevent blowout */
           div[class*="st-key-mobile_calc_forward_"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"],
           div[class*="st-key-mobile_calc_reverse_"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] {
-            display: grid !important;
-            grid-template-columns: minmax(4.2rem, 0.95fr) minmax(4.05rem, 1.05fr) !important;
+            display: flex !important;
+            flex-direction: row !important;
             gap: 0.3rem !important;
-            align-items: start !important;
+            justify-content: space-between !important;
+            flex-wrap: nowrap !important;
           }
           div[class*="st-key-mobile_calc_forward_"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"],
           div[class*="st-key-mobile_calc_reverse_"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
-            width: auto !important;
+            width: 48% !important;
+            flex: 0 0 48% !important;
             min-width: 0 !important;
-            flex: none !important;
           }
+          
           div[class*="st-key-mobile_calc_forward_"] label,
           div[class*="st-key-mobile_calc_reverse_"] label {
             height: 0.88rem;
@@ -2253,13 +2286,14 @@ def inject_css() -> None:
           div[class*="st-key-mobile_btn_grid_"] [data-testid="stHorizontalBlock"] {
             display: flex !important;
             flex-direction: row !important;
-            gap: 0.2rem !important;
-            justify-content: center !important;
+            gap: 0 !important;
+            justify-content: space-between !important;
+            width: 100% !important;
           }
           div[class*="st-key-mobile_btn_grid_"] [data-testid="stColumn"] {
-            width: auto !important;
-            flex: 1 !important;
-            min-width: 0 !important;
+            flex: 0 0 1.32rem !important;
+            width: 1.32rem !important;
+            min-width: 1.32rem !important;
           }
           div[class*="st-key-mobile_btn_grid_"] [data-testid="stColumn"] > div[data-testid="stVerticalBlock"] {
             gap: 0.34rem !important;
@@ -2279,23 +2313,12 @@ def inject_css() -> None:
           div[class*="st-key-mobile_action_"] button,
           div[class*="st-key-mobile_delete_"] button,
           div[class*="st-key-mobile_reset_"] button[data-testid="stPopoverButton"] {
-            width: 1.32rem !important;
-            min-width: 1.32rem !important;
-            min-height: 1.32rem !important;
             height: 1.32rem !important;
             font-size: 0.62rem !important;
-            padding: 0 !important;
-            border-radius: 6px !important;
-            display: inline-flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-            color: var(--ink) !important;
           }
           div[class*="st-key-mobile_reset_"] button[data-testid="stPopoverButton"] p {
-            font-size: 1.05rem !important;
-            font-weight: normal !important;
-            line-height: 1 !important;
-            margin: 0 !important;
+            font-size: 1.15rem !important;
+            font-weight: 400 !important;
           }
           div[class*="st-key-mobile_delete_"] button {
             color: var(--danger) !important;
@@ -2332,17 +2355,6 @@ def inject_css() -> None:
           div[class*="st-key-mobile_calc_forward_"],
           div[class*="st-key-mobile_calc_reverse_"] {
             padding: 0.34rem 0.32rem 0.3rem;
-          }
-          div[class*="st-key-mobile_calc_forward_"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"],
-          div[class*="st-key-mobile_calc_reverse_"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] {
-            grid-template-columns: minmax(3.75rem, 0.9fr) minmax(3.35rem, 1.1fr) !important;
-            gap: 0.2rem !important;
-          }
-          div[class*="st-key-mobile_calc_forward_"] input,
-          div[class*="st-key-mobile_calc_reverse_"] input {
-            font-size: 0.78rem;
-            padding-left: 0.34rem;
-            padding-right: 0.22rem;
           }
           .calc-result-label {
             font-size: 0.66rem;
