@@ -33,7 +33,7 @@ YUANTA_QUOTE = "https://www.warrantwin.com.tw/eyuanta/ws/Quote.ashx"
 KGI_SERVICE = "https://warrant.kgi.com/EDWebService/WSInterfaceSwap.asmx/GetService"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.3c"
+APP_VERSION = "W1.0.3d"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
@@ -1340,6 +1340,12 @@ def safe_key(value: str) -> str:
     return re.sub(r"[^0-9A-Za-z_]", "_", value)
 
 
+def warrant_title_text(item: dict[str, Any]) -> str:
+    name = str(item.get("name") or "").strip()
+    code = str(item.get("code") or "").strip()
+    return f"{name} {code}".strip() if name else code
+
+
 def metric_html(label: str, value: Any, *, accent: bool = False) -> str:
     cls = "metric-value accent" if accent else "metric-value"
     return (
@@ -1634,6 +1640,7 @@ def inject_css() -> None:
         div[class*="st-key-card_"] {
           background: var(--surface);
           border-radius: 8px;
+          margin-bottom: 0.68rem;
         }
         div[class*="st-key-card_"] > div {
           border-color: var(--line) !important;
@@ -1867,15 +1874,15 @@ def inject_css() -> None:
           white-space: nowrap;
         }
         .card-error-note {
-          width: 50%;
-          min-width: 17rem;
-          max-width: 30rem;
-          margin-top: 0.44rem;
+          width: 36%;
+          min-width: 14rem;
+          max-width: 22rem;
+          margin: 0.56rem 0 0.08rem;
           border-radius: 8px;
           background: rgba(128, 126, 58, 0.48);
           color: var(--ink);
-          padding: 0.42rem 0.56rem;
-          font-size: 0.76rem;
+          padding: 0.3rem 0.46rem;
+          font-size: 0.68rem;
           line-height: 1.25;
           font-weight: 750;
           overflow-wrap: anywhere;
@@ -2197,8 +2204,9 @@ def inject_css() -> None:
             width: 100%;
             min-width: 0;
             max-width: none;
-            font-size: 0.7rem;
-            padding: 0.36rem 0.46rem;
+            margin: 0.42rem 0 0.08rem;
+            font-size: 0.66rem;
+            padding: 0.3rem 0.4rem;
           }
         }
         @media (min-width: 901px) {
@@ -2264,7 +2272,7 @@ def render_warrant_card(item: dict[str, Any], index: int) -> None:
             st.markdown("</div>", unsafe_allow_html=True)
 
         with card_cols[0]:
-            title = f"{item.get('code') or ''} {item.get('name') or ''}".strip()
+            title = warrant_title_text(item)
             st.markdown(
                 '<div class="card-header-grid">'
                 '<div class="card-title-cell">'
@@ -2361,7 +2369,7 @@ def render_mobile_warrant_card(item: dict[str, Any], index: int) -> None:
                     delete_item(index)
 
         with card_cols[0]:
-            title = f"{item.get('code') or ''} {item.get('name') or ''}".strip()
+            title = warrant_title_text(item)
             st.markdown(
                 '<div class="mobile-card-header">'
                 '<div class="mobile-title">'
