@@ -18,6 +18,7 @@ from zoneinfo import ZoneInfo
 
 import requests
 import streamlit as st
+import urllib3
 
 
 APP_DIR = Path(__file__).resolve().parent
@@ -32,12 +33,15 @@ YUANTA_QUOTE = "https://www.warrantwin.com.tw/eyuanta/ws/Quote.ashx"
 KGI_SERVICE = "https://warrant.kgi.com/EDWebService/WSInterfaceSwap.asmx/GetService"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.2i"
+APP_VERSION = "W1.0.2j"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
 SUPABASE_TABLE_DEFAULT = "warrant_watch_lists"
 SUPABASE_PROFILE_DEFAULT = "default"
+VENDOR_SSL_VERIFY = False
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 class WarrantError(Exception):
@@ -219,8 +223,14 @@ def split_book(value: Any) -> list[float]:
     return numbers
 
 
-def fetch_json(url: str, *, method: str = "GET", data: dict[str, str] | None = None) -> Any:
-    response = requests.request(method, url, headers=HEADERS, data=data, timeout=15)
+def fetch_json(
+    url: str,
+    *,
+    method: str = "GET",
+    data: dict[str, str] | None = None,
+    verify: bool = True,
+) -> Any:
+    response = requests.request(method, url, headers=HEADERS, data=data, timeout=15, verify=verify)
     response.raise_for_status()
     return response_json(response, url)
 
@@ -341,6 +351,7 @@ def fetch_yuanta_warrant(code: str) -> dict[str, Any] | None:
         headers=headers,
         data={"data": json.dumps(payload, ensure_ascii=False)},
         timeout=15,
+        verify=VENDOR_SSL_VERIFY,
     )
     response.raise_for_status()
     data = response_json(response, "元大權證資料")
@@ -351,7 +362,7 @@ def fetch_yuanta_warrant(code: str) -> dict[str, Any] | None:
 @st.cache_data(ttl=15, show_spinner=False)
 def fetch_yuanta_quote_calc(params: dict[str, str]) -> dict[str, Any] | None:
     endpoint = f"{YUANTA_QUOTE}?{urlencode(params)}"
-    data = fetch_json(endpoint)
+    data = fetch_json(endpoint, verify=VENDOR_SSL_VERIFY)
     calc = data.get("calc") if isinstance(data, dict) else None
     return calc if isinstance(calc, dict) else None
 
@@ -377,6 +388,7 @@ def fetch_kgi_service(service_id: str, params: dict[str, Any]) -> Any:
             "parametersOfJson": json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
         },
         timeout=15,
+        verify=VENDOR_SSL_VERIFY,
     )
     response.raise_for_status()
     root = ET.fromstring(response.text)
