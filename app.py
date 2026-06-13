@@ -33,7 +33,7 @@ YUANTA_QUOTE = "https://www.warrantwin.com.tw/eyuanta/ws/Quote.ashx"
 KGI_SERVICE = "https://warrant.kgi.com/EDWebService/WSInterfaceSwap.asmx/GetService"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.4"
+APP_VERSION = "W1.0.4a"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
@@ -41,6 +41,7 @@ SUPABASE_TABLE_DEFAULT = "warrant_watch_lists"
 SUPABASE_PROFILE_DEFAULT = "default"
 SUPABASE_HEADERS_BASE = {"User-Agent": "warrant-watch-streamlit/1.0"}
 VENDOR_SSL_VERIFY = False
+VOLATILITY_ALERT_POINTS = 1.0
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -1174,7 +1175,7 @@ def load_warrant(code: str, existing: dict[str, Any] | None = None) -> dict[str,
         item["error"] = "目前只支援元大與凱基權證理論價"
     item["simulatedPrice"] = None
     item["impliedSpot"] = None
-    return item
+    return apply_volatility_tracking(item, existing)
 
 
 def fair_price_for_spot(item: dict[str, Any], spot: Any) -> float | None:
@@ -1200,6 +1201,9 @@ def read_cloud_items() -> list[dict[str, Any]]:
         if isinstance(item, dict) and item.get("code"):
             item.setdefault("id", str(uuid.uuid4()))
             item.setdefault("error", "")
+            item.setdefault("volatilityAlerted", False)
+            item.setdefault("previousVolatility", None)
+            item.setdefault("volatilityChangePoints", None)
             valid_items.append(recalculate_derived_prices(item))
     return valid_items
 
@@ -1235,6 +1239,9 @@ def normalize_saved_item(item: dict[str, Any]) -> dict[str, Any] | None:
     normalized.setdefault("type", "call")
     normalized.setdefault("quote", {})
     normalized.setdefault("underlyingQuote", {})
+    normalized.setdefault("volatilityAlerted", False)
+    normalized.setdefault("previousVolatility", None)
+    normalized.setdefault("volatilityChangePoints", None)
     normalized.setdefault("testSpot", normalized.get("spot"))
     normalized.setdefault("targetPrice", normalized.get("marketReference"))
     normalized.setdefault("updatedAt", int(time.time() * 1000))
@@ -1316,6 +1323,66 @@ def numbers_equal(left: Any, right: Any, *, tolerance: float = 1e-9) -> bool:
 
 def type_text(value: str) -> str:
     return "認售" if value == "put" else "認購"
+
+
+def format_percent_points(value: Any, digits: int = 2) -> str:
+    parsed = to_number(value)
+    if parsed is None:
+        return "--"
+    return f"{parsed * 100:,.{digits}f}%"
+
+
+def format_volatility_change(value: Any) -> str:
+    parsed = to_number(value)
+    if parsed is None:
+        return "--"
+    sign = "+" if parsed > 0 else ""
+    return f"{sign}{parsed:.2f}pt"
+
+
+def apply_volatility_tracking(item: dict[str, Any], existing: dict[str, Any] | None) -> dict[str, Any]:
+    existing = existing or {}
+    current_volatility = to_number(item.get("volatility"))
+    previous_volatility = to_number(existing.get("volatility"))
+    previous_alerted = bool(existing.get("volatilityAlerted"))
+    now = datetime.now(TAIPEI).isoformat()
+
+    item["volatilityAlerted"] = previous_alerted
+    item["volatilityAlertThreshold"] = VOLATILITY_ALERT_POINTS
+    item["previousVolatility"] = previous_volatility
+    item["volatilityChangePoints"] = None
+    item["volatilityDirection"] = existing.get("volatilityDirection") or ""
+    item["volatilityFirstAlertAt"] = existing.get("volatilityFirstAlertAt") or ""
+    item["volatilityLastCheckAt"] = now
+
+    if current_volatility is None or previous_volatility is None:
+        return item
+
+    change_points = (current_volatility - previous_volatility) * 100
+    item["volatilityChangePoints"] = change_points
+    if change_points > 0:
+        item["volatilityDirection"] = "up"
+    elif change_points < 0:
+        item["volatilityDirection"] = "down"
+    else:
+        item["volatilityDirection"] = "flat"
+
+    if abs(change_points) >= VOLATILITY_ALERT_POINTS:
+        item["volatilityAlerted"] = True
+        item["volatilityLastAlertAt"] = now
+        if not item["volatilityFirstAlertAt"]:
+            item["volatilityFirstAlertAt"] = now
+    else:
+        item["volatilityLastAlertAt"] = existing.get("volatilityLastAlertAt") or ""
+    return item
+
+
+def volatility_tracking_text(item: dict[str, Any]) -> str:
+    previous = to_number(item.get("previousVolatility"))
+    change = to_number(item.get("volatilityChangePoints"))
+    if previous is None or change is None:
+        return "尚無前次資料"
+    return f"前次 {format_percent_points(previous)} / 變化 {format_volatility_change(change)}"
 
 
 def time_ago(timestamp: Any) -> str:
@@ -1405,6 +1472,9 @@ def detail_row_html(label: str, value: str) -> str:
 def detail_html(item: dict[str, Any]) -> str:
     quote = item.get("quote") or {}
     underlying_quote = item.get("underlyingQuote") or {}
+    star_class = "native-detail-popover volatility-lit" if item.get("volatilityAlerted") else "native-detail-popover"
+    star_text = "★" if item.get("volatilityAlerted") else "☆"
+    star_title = "隱波已變動，點擊查看追蹤" if item.get("volatilityAlerted") else "權證細節"
     rows = [
         ("類型", type_text(item.get("type") or "call")),
         ("標的", f"{item.get('underlyingCode') or ''} {item.get('underlyingName') or ''}".strip()),
@@ -1414,14 +1484,15 @@ def detail_html(item: dict[str, Any]) -> str:
         ("評價日", item.get("evaluationDate") or "--"),
         ("合理價來源", item.get("fairPriceSource") or "--"),
         ("波動率", f"{item.get('volatilitySource') or '波動率'} {format_number((to_number(item.get('volatility')) or 0) * 100)}%"),
+        ("隱波追蹤", volatility_tracking_text(item)),
         ("利率", f"{format_number((to_number(item.get('riskFreeRate')) or 0) * 100)}%"),
         ("委買/委賣", f"{format_number(quote.get('bestBid'))} / {format_number(quote.get('bestAsk'))}"),
         ("標的市場", f"{underlying_quote.get('market') or '--'}"),
     ]
     body = "".join(detail_row_html(label, value) for label, value in rows)
     return (
-        '<details class="native-detail-popover">'
-        '<summary title="權證細節">☆</summary>'
+        f'<details class="{star_class}">'
+        f'<summary title="{html.escape(star_title)}">{star_text}</summary>'
         f'<div class="native-detail-body">{body}</div>'
         "</details>"
     )
@@ -1770,6 +1841,12 @@ def inject_css() -> None:
         .native-detail-popover[open] summary {
           border-color: #9ecfbd;
           background: #26354c;
+        }
+        .native-detail-popover.volatility-lit summary {
+          color: #fdd663;
+          border-color: #fbbc04;
+          background: rgba(251, 188, 4, 0.14);
+          box-shadow: 0 0 0 1px rgba(251, 188, 4, 0.16), 0 0 12px rgba(251, 188, 4, 0.16);
         }
         .native-detail-body {
           position: absolute;
