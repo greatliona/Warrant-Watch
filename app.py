@@ -33,7 +33,7 @@ YUANTA_QUOTE = "https://www.warrantwin.com.tw/eyuanta/ws/Quote.ashx"
 KGI_SERVICE = "https://warrant.kgi.com/EDWebService/WSInterfaceSwap.asmx/GetService"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.4c"
+APP_VERSION = "W1.0.4d"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
@@ -1916,12 +1916,14 @@ def inject_css() -> None:
           font-weight: 850;
           white-space: nowrap;
         }
-        .card-actions {
-          display: grid;
-          align-content: start;
-          justify-items: center;
-          gap: 0.36rem;
-          padding-top: 1.38rem;
+        div[class*="st-key-card_actions_"] > div[data-testid="stVerticalBlock"] {
+          display: grid !important;
+          align-content: start !important;
+          justify-items: center !important;
+          gap: 0.36rem !important;
+        }
+        .desktop-action-spacer {
+          height: 4.45rem;
         }
         div[class*="st-key-card_action_"],
         div[class*="st-key-delete_"] {
@@ -2284,7 +2286,9 @@ def inject_css() -> None:
             justify-items: center !important;
             gap: 0.34rem !important;
             min-height: 7.1rem;
-            padding-top: 1.52rem;
+          }
+          .mobile-action-spacer {
+            height: 5.15rem;
           }
           div[class*="st-key-mobile_action_"],
           div[class*="st-key-mobile_delete_"] {
@@ -2367,14 +2371,14 @@ def render_warrant_card(item: dict[str, Any], index: int) -> None:
 
         changed = False
         with card_cols[1]:
-            st.markdown('<div class="card-actions">', unsafe_allow_html=True)
-            if st.button("▲", key=f"card_action_up_{card_id}", disabled=index == 0, help="上移"):
-                move_item(index, -1)
-            if st.button("▼", key=f"card_action_down_{card_id}", disabled=index == len(st.session_state["items"]) - 1, help="下移"):
-                move_item(index, 1)
-            if st.button("×", key=f"delete_{card_id}", help="刪除這檔權證"):
-                delete_item(index)
-            st.markdown("</div>", unsafe_allow_html=True)
+            with st.container(key=f"card_actions_{card_id}"):
+                st.markdown('<div class="desktop-action-spacer"></div>', unsafe_allow_html=True)
+                if st.button("▲", key=f"card_action_up_{card_id}", disabled=index == 0, help="上移"):
+                    move_item(index, -1)
+                if st.button("▼", key=f"card_action_down_{card_id}", disabled=index == len(st.session_state["items"]) - 1, help="下移"):
+                    move_item(index, 1)
+                if st.button("×", key=f"delete_{card_id}", help="刪除這檔權證"):
+                    delete_item(index)
 
         with card_cols[0]:
             st.markdown(
@@ -2465,6 +2469,7 @@ def render_mobile_warrant_card(item: dict[str, Any], index: int) -> None:
 
         with card_cols[1]:
             with st.container(key=f"mobile_actions_{card_id}"):
+                st.markdown('<div class="mobile-action-spacer"></div>', unsafe_allow_html=True)
                 if st.button("▲", key=f"mobile_action_up_{card_id}", disabled=index == 0, help="上移"):
                     move_item(index, -1)
                 if st.button("▼", key=f"mobile_action_down_{card_id}", disabled=index == len(st.session_state["items"]) - 1, help="下移"):
