@@ -33,7 +33,7 @@ YUANTA_QUOTE = "https://www.warrantwin.com.tw/eyuanta/ws/Quote.ashx"
 KGI_SERVICE = "https://warrant.kgi.com/EDWebService/WSInterfaceSwap.asmx/GetService"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.4e"
+APP_VERSION = "W1.0.4f"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
@@ -1923,7 +1923,7 @@ def inject_css() -> None:
           gap: 0.36rem !important;
         }
         .desktop-action-spacer {
-          height: 5.72rem;
+          height: 3.88rem;
         }
         div[class*="st-key-card_action_"],
         div[class*="st-key-delete_"] {
@@ -1993,7 +1993,8 @@ def inject_css() -> None:
           overflow-wrap: anywhere;
         }
         .app-version,
-        .mobile-version {
+        .mobile-version,
+        .mobile-update-time {
           color: var(--faint);
           font-size: 0.68rem;
           line-height: 1.15;
@@ -2002,7 +2003,8 @@ def inject_css() -> None:
         .app-version {
           margin: -0.1rem 0 0.58rem;
         }
-        .mobile-version {
+        .mobile-version,
+        .mobile-update-time {
           margin-top: 0.26rem;
           text-align: center;
         }
@@ -2034,7 +2036,7 @@ def inject_css() -> None:
           display: flex;
           align-items: baseline;
           justify-content: center;
-          gap: 0.42rem;
+          gap: 0.22rem;
           min-width: 0;
         }
         .mobile-status span {
@@ -2045,7 +2047,7 @@ def inject_css() -> None:
         }
         .mobile-status strong {
           color: var(--ink);
-          font-size: 1.15rem;
+          font-size: 0.78rem;
           line-height: 1;
           font-weight: 850;
         }
@@ -2300,7 +2302,7 @@ def inject_css() -> None:
             min-height: 7.1rem;
           }
           .mobile-action-spacer {
-            height: 6.32rem;
+            height: 3.48rem;
           }
           div[class*="st-key-mobile_action_"],
           div[class*="st-key-mobile_delete_"] {
@@ -2635,9 +2637,7 @@ def render_mobile_controls() -> None:
         with control_cols[1]:
             st.markdown(
                 '<div class="mobile-status">'
-                '<span>已儲存</span>'
-                f'<strong>{len(st.session_state["items"])}</strong>'
-                f'<small>{html.escape(latest_update_text(st.session_state["items"]))}</small>'
+                f'<span>已儲存 <strong>{len(st.session_state["items"])}</strong> 檔</span>'
                 "</div>",
                 unsafe_allow_html=True,
             )
@@ -2648,7 +2648,7 @@ def render_mobile_controls() -> None:
                 except Exception as error:
                     st.error(str(error))
         st.markdown(
-            f'<div class="mobile-version">{html.escape(app_version_text())} · 儲存 {html.escape(storage_label())}</div>',
+            f'<div class="mobile-update-time">最近更新 {html.escape(latest_update_text(st.session_state["items"]))}</div>',
             unsafe_allow_html=True,
         )
 
