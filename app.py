@@ -33,7 +33,7 @@ YUANTA_QUOTE = "https://www.warrantwin.com.tw/eyuanta/ws/Quote.ashx"
 KGI_SERVICE = "https://warrant.kgi.com/EDWebService/WSInterfaceSwap.asmx/GetService"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.5b"
+APP_VERSION = "W1.0.5c"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
@@ -2069,20 +2069,6 @@ def inject_css() -> None:
             font-weight: 850;
             white-space: nowrap;
           }
-          div[class*="st-key-mobile_controls"] div[data-testid="stVerticalBlock"] {
-            gap: 0.2rem;
-          }
-          div[class*="st-key-mobile_controls"] div[data-testid="stHorizontalBlock"] {
-            display: grid !important;
-            grid-template-columns: 4.2rem minmax(0, 1fr) 5.8rem !important;
-            gap: 0.5rem !important;
-            align-items: center !important;
-          }
-          div[class*="st-key-mobile_controls"] div[data-testid="stHorizontalBlock"] > div {
-            width: auto !important;
-            min-width: 0 !important;
-            flex: none !important;
-          }
           div[class*="st-key-mobile_controls"] .stButton > button {
             min-height: 1.9rem;
             height: 1.9rem;
@@ -2551,8 +2537,17 @@ def render_main() -> None:
 
 def render_mobile_controls() -> None:
     with st.container(key="mobile_controls"):
-        control_cols = st.columns([0.26, 0.39, 0.35], gap="small")
-        with control_cols[0]:
+        st.markdown(
+            f'<div style="text-align: center; margin-bottom: 0.6rem; line-height: 1.4; word-wrap: break-word; white-space: normal;">'
+            f'<span style="color: var(--muted); font-size: 0.76rem;">已儲存 <strong style="color: var(--ink);">{len(st.session_state["items"])}</strong> 檔</span><br>'
+            f'<span style="color: var(--faint); font-size: 0.65rem;">評價日期: {today_compact()} | {html.escape(app_version_text())} | 儲存: {html.escape(storage_label())}</span><br>'
+            f'<span style="color: var(--faint); font-size: 0.65rem;">最近更新 {html.escape(latest_update_text(st.session_state["items"]))}</span>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+        btn_cols = st.columns(2, gap="small")
+        with btn_cols[0]:
             with st.popover("新增", use_container_width=True):
                 with st.form("add_warrant_form_mobile", clear_on_submit=True):
                     code = st.text_input("權證代號", placeholder="例如 030012", key="mobile_warrant_code").strip().upper()
@@ -2562,16 +2557,7 @@ def render_mobile_controls() -> None:
                         add_or_update_warrant(code)
                     except Exception as error:
                         st.error(str(error))
-        with control_cols[1]:
-            st.markdown(
-                f'<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.25rem; line-height: 1.1; margin: 0.2rem 0;">'
-                f'<span style="color: var(--muted); font-size: 0.74rem; white-space: nowrap;">已儲存 <strong style="color: var(--ink);">{len(st.session_state["items"])}</strong> 檔</span>'
-                f'<span style="color: var(--faint); font-size: 0.6rem; text-align: center; white-space: nowrap;">{html.escape(app_version_text())} · {html.escape(storage_label())}</span>'
-                f'<span style="color: var(--faint); font-size: 0.6rem; text-align: center; white-space: nowrap;">最近更新 {html.escape(latest_update_text(st.session_state["items"]))}</span>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-        with control_cols[2]:
+        with btn_cols[1]:
             if st.button("更新價格", use_container_width=True, disabled=not st.session_state["items"], key="mobile_refresh_prices"):
                 try:
                     refresh_all_prices()
@@ -2583,7 +2569,7 @@ def render_sidebar() -> None:
     with st.sidebar:
         st.title("Warrant Watch!")
         st.markdown(
-            f'<div style="color: var(--faint); font-size: 0.68rem; line-height: 1.5; margin-bottom: 0.8rem;">'
+            f'<div style="color: var(--faint); font-size: 0.68rem; line-height: 1.5; margin-bottom: 0.8rem; word-wrap: break-word; white-space: normal;">'
             f'評價日期: {today_compact()}<br>'
             f'{html.escape(app_version_text())}<br>'
             f'儲存: {html.escape(storage_label())}'
