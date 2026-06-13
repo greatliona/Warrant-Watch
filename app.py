@@ -33,12 +33,13 @@ YUANTA_QUOTE = "https://www.warrantwin.com.tw/eyuanta/ws/Quote.ashx"
 KGI_SERVICE = "https://warrant.kgi.com/EDWebService/WSInterfaceSwap.asmx/GetService"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.2j"
+APP_VERSION = "W1.0.2k"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
 SUPABASE_TABLE_DEFAULT = "warrant_watch_lists"
 SUPABASE_PROFILE_DEFAULT = "default"
+SUPABASE_HEADERS_BASE = {"User-Agent": "warrant-watch-streamlit/1.0"}
 VENDOR_SSL_VERIFY = False
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -131,7 +132,11 @@ def secret_value(env_key: str, nested_key: str | None = None, default: str = "")
 
 def supabase_config() -> dict[str, str] | None:
     url = secret_value("SUPABASE_URL", "url").rstrip("/")
-    key = secret_value("SUPABASE_KEY", "key") or secret_value("SUPABASE_ANON_KEY", "anon_key")
+    key = (
+        secret_value("SUPABASE_SERVICE_KEY", "service_key")
+        or secret_value("SUPABASE_KEY", "key")
+        or secret_value("SUPABASE_ANON_KEY", "anon_key")
+    )
     if not url or not key:
         return None
     table = secret_value("SUPABASE_TABLE", "table", SUPABASE_TABLE_DEFAULT) or SUPABASE_TABLE_DEFAULT
@@ -147,7 +152,7 @@ def storage_label() -> str:
 
 def supabase_headers(config: dict[str, str], *, prefer: str = "") -> dict[str, str]:
     headers = {
-        **HEADERS,
+        **SUPABASE_HEADERS_BASE,
         "apikey": config["key"],
         "Authorization": f"Bearer {config['key']}",
         "Content-Type": "application/json",
