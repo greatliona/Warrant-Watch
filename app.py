@@ -33,7 +33,7 @@ YUANTA_QUOTE = "https://www.warrantwin.com.tw/eyuanta/ws/Quote.ashx"
 KGI_SERVICE = "https://warrant.kgi.com/EDWebService/WSInterfaceSwap.asmx/GetService"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.5k"
+APP_VERSION = "W1.0.5a"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
@@ -1048,11 +1048,13 @@ def load_warrant(code: str, existing: dict[str, Any] | None = None) -> dict[str,
             yuanta_error = str(error)
             yuanta = None
 
-    quote = (
-        fetch_quote_with_fallback(normalized, info.get("warrantMarket") or "tse")
-        or quote_from_kgi(kgi_warrant, normalized)
-        or quote_from_yuanta(yuanta, normalized)
-    )
+    if issuer == "yuanta":
+        quote = quote_from_yuanta(yuanta, normalized)
+    elif issuer == "kgi":
+        quote = quote_from_kgi(kgi_warrant, normalized)
+    else:
+        quote = None
+
     if not quote:
         details = "；".join(message for message in (yuanta_error, kgi_error) if message)
         raise WarrantError(f"查無權證即時報價{f'：{details}' if details else ''}")
@@ -1124,7 +1126,7 @@ def load_warrant(code: str, existing: dict[str, Any] | None = None) -> dict[str,
             kgi_error = str(error)
             fair_from_kgi = None
 
-    market_reference = quote_reference(quote)
+    market_reference = quote.get("bestBid") if quote else None
     spot = first_number(pricing["underlyingPrice"], quote_reference(underlying_quote))
     item = {
         "id": (existing or {}).get("id") or str(uuid.uuid4()),
