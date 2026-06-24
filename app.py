@@ -33,7 +33,7 @@ YUANTA_QUOTE = "https://www.warrantwin.com.tw/eyuanta/ws/Quote.ashx"
 KGI_SERVICE = "https://warrant.kgi.com/EDWebService/WSInterfaceSwap.asmx/GetService"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.6g"
+APP_VERSION = "W1.0.6h"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
@@ -2203,26 +2203,47 @@ def inject_css() -> None:
         }
         div[class*="st-key-desktop_backup_buttons"] button,
         div[class*="st-key-mobile_backup_controls"] button {
+          display: grid !important;
+          place-items: center !important;
           width: 100% !important;
           min-width: 0 !important;
           box-sizing: border-box !important;
           min-height: 1.42rem !important;
           height: 1.42rem !important;
-          padding: 0 0.28rem !important;
+          padding: 0 !important;
           font-size: 0.6rem !important;
           line-height: 1 !important;
+          text-align: center !important;
           white-space: nowrap !important;
         }
         div[class*="st-key-desktop_backup_buttons"] button > div,
         div[class*="st-key-mobile_backup_controls"] button > div {
+          display: grid !important;
+          grid-template-columns: 1fr !important;
+          place-items: center !important;
           width: 100% !important;
+          height: 100% !important;
           justify-content: center !important;
           align-items: center !important;
           text-align: center !important;
+          gap: 0 !important;
+          margin: 0 !important;
+        }
+        div[class*="st-key-desktop_backup_buttons"] button span[data-testid="stIconMaterial"],
+        div[class*="st-key-desktop_backup_buttons"] button svg,
+        div[class*="st-key-mobile_backup_controls"] button span[data-testid="stIconMaterial"],
+        div[class*="st-key-mobile_backup_controls"] button svg {
+          display: none !important;
+          width: 0 !important;
+          min-width: 0 !important;
+          margin: 0 !important;
         }
         div[class*="st-key-desktop_backup_buttons"] button p,
         div[class*="st-key-mobile_backup_controls"] button p {
-          width: 100% !important;
+          width: auto !important;
+          min-width: 0 !important;
+          margin: 0 auto !important;
+          justify-self: center !important;
           font-size: 0.6rem !important;
           line-height: 1 !important;
           text-align: center !important;
