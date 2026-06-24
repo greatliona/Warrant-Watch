@@ -33,7 +33,7 @@ YUANTA_QUOTE = "https://www.warrantwin.com.tw/eyuanta/ws/Quote.ashx"
 KGI_SERVICE = "https://warrant.kgi.com/EDWebService/WSInterfaceSwap.asmx/GetService"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.6c"
+APP_VERSION = "W1.0.6d"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
@@ -1296,6 +1296,15 @@ def import_items(raw_text: str, *, replace: bool) -> int:
     return len(imported)
 
 
+def export_items_text() -> str:
+    payload = {
+        "exportedAt": datetime.now(TAIPEI).isoformat(),
+        "appVersion": APP_VERSION,
+        "items": [item_without_calculations(item) for item in st.session_state.get("items", [])],
+    }
+    return json.dumps(payload, ensure_ascii=False, indent=2)
+
+
 def format_number(value: Any, digits: int = 2) -> str:
     parsed = to_number(value)
     if parsed is None:
@@ -1372,12 +1381,13 @@ def normalize_volatility_history(value: Any) -> list[dict[str, Any]]:
 def format_tracking_time(value: Any) -> str:
     text = str(value or "").strip()
     if not text:
-        return "--"
+        return ""
     try:
         parsed = datetime.fromisoformat(text)
     except ValueError:
-        return text[:16].replace("T", " ")
-    return parsed.strftime("%m/%d %H:%M")
+        digits = re.sub(r"\D", "", text)
+        return digits[:8] if len(digits) >= 8 else ""
+    return parsed.strftime("%Y%m%d")
 
 
 def migrate_legacy_volatility_history(existing: dict[str, Any], history: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1395,7 +1405,7 @@ def migrate_legacy_volatility_history(existing: dict[str, Any], history: list[di
         existing.get("volatilityLastAlertAt")
         or existing.get("volatilityFirstAlertAt")
         or existing.get("volatilityLastCheckAt")
-        or datetime.now(TAIPEI).isoformat()
+        or ""
     )
     if previous is None or current is None or change is None:
         return history
@@ -2792,6 +2802,27 @@ def render_mobile_controls() -> None:
                     refresh_all_prices()
                 except Exception as error:
                     st.error(str(error))
+        backup_cols = st.columns(2, gap="small")
+        with backup_cols[0]:
+            st.download_button(
+                "匯出資料",
+                data=export_items_text(),
+                file_name=f"warrant_watch_{today_compact()}.json",
+                mime="application/json",
+                use_container_width=True,
+                key="mobile_export_items",
+            )
+        with backup_cols[1]:
+            with st.popover("匯入資料", use_container_width=True):
+                raw_text = st.text_area("貼上備份 JSON", key="mobile_import_items_text", height=140)
+                replace = st.checkbox("取代目前清單", value=True, key="mobile_import_replace")
+                if st.button("確認匯入", use_container_width=True, key="mobile_import_submit"):
+                    try:
+                        count = import_items(raw_text, replace=replace)
+                        st.toast(f"已匯入 {count} 檔")
+                        st.rerun()
+                    except Exception as error:
+                        st.error(str(error))
 
 
 def render_sidebar() -> None:
@@ -2835,6 +2866,27 @@ def render_sidebar() -> None:
                 f'</div>',
                 unsafe_allow_html=True,
             )
+        backup_cols = st.columns(2, gap="small")
+        with backup_cols[0]:
+            st.download_button(
+                "匯出資料",
+                data=export_items_text(),
+                file_name=f"warrant_watch_{today_compact()}.json",
+                mime="application/json",
+                use_container_width=True,
+                key="desktop_export_items",
+            )
+        with backup_cols[1]:
+            with st.popover("匯入資料", use_container_width=True):
+                raw_text = st.text_area("貼上備份 JSON", key="desktop_import_items_text", height=140)
+                replace = st.checkbox("取代目前清單", value=True, key="desktop_import_replace")
+                if st.button("確認匯入", use_container_width=True, key="desktop_import_submit"):
+                    try:
+                        count = import_items(raw_text, replace=replace)
+                        st.toast(f"已匯入 {count} 檔")
+                        st.rerun()
+                    except Exception as error:
+                        st.error(str(error))
 
 
 def main() -> None:
