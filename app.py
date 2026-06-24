@@ -33,7 +33,7 @@ YUANTA_QUOTE = "https://www.warrantwin.com.tw/eyuanta/ws/Quote.ashx"
 KGI_SERVICE = "https://warrant.kgi.com/EDWebService/WSInterfaceSwap.asmx/GetService"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.6f"
+APP_VERSION = "W1.0.6g"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
@@ -1994,9 +1994,10 @@ def inject_css() -> None:
           z-index: 50;
           top: 1.85rem;
           left: 0;
-          width: max-content;
+          width: min(92vw, 520px);
           min-width: 270px;
-          max-width: 330px;
+          max-width: calc(100vw - 1.5rem);
+          box-sizing: border-box;
           border: 1px solid var(--line);
           border-radius: 8px;
           background: var(--surface);
@@ -2161,9 +2162,12 @@ def inject_css() -> None:
         .detail-line strong {
           color: var(--ink);
           font-weight: 760;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
+          min-width: 0;
+          overflow: visible;
+          text-overflow: clip;
+          white-space: normal;
+          overflow-wrap: anywhere;
+          word-break: break-word;
         }
         .small-note {
           color: var(--muted);
@@ -2209,10 +2213,19 @@ def inject_css() -> None:
           line-height: 1 !important;
           white-space: nowrap !important;
         }
+        div[class*="st-key-desktop_backup_buttons"] button > div,
+        div[class*="st-key-mobile_backup_controls"] button > div {
+          width: 100% !important;
+          justify-content: center !important;
+          align-items: center !important;
+          text-align: center !important;
+        }
         div[class*="st-key-desktop_backup_buttons"] button p,
         div[class*="st-key-mobile_backup_controls"] button p {
+          width: 100% !important;
           font-size: 0.6rem !important;
           line-height: 1 !important;
+          text-align: center !important;
           white-space: nowrap !important;
         }
         .sidebar-update-inline {
