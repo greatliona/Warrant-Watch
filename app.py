@@ -33,7 +33,7 @@ YUANTA_QUOTE = "https://www.warrantwin.com.tw/eyuanta/ws/Quote.ashx"
 KGI_SERVICE = "https://warrant.kgi.com/EDWebService/WSInterfaceSwap.asmx/GetService"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.6e"
+APP_VERSION = "W1.0.6f"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
@@ -1431,7 +1431,7 @@ def apply_volatility_tracking(item: dict[str, Any], existing: dict[str, Any] | N
     )
     last_record = history[-1] if history else {}
     last_recorded_volatility = to_number(last_record.get("currentVolatility"))
-    now = datetime.now(TAIPEI).isoformat()
+    now = today_compact()
 
     item["volatilityAlerted"] = previous_alerted
     item["volatilityAlertThreshold"] = VOLATILITY_ALERT_POINTS
@@ -2173,6 +2173,16 @@ def inject_css() -> None:
         div[class*="st-key-desktop_backup_row"] {
           margin-top: 0.28rem;
         }
+        div[class*="st-key-desktop_backup_row"] > div[data-testid="stVerticalBlock"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] {
+          display: flex !important;
+          flex-direction: row !important;
+          flex-wrap: nowrap !important;
+          align-items: center !important;
+          gap: 0.44rem !important;
+        }
+        div[class*="st-key-desktop_backup_row"] > div[data-testid="stVerticalBlock"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
+          min-width: 0 !important;
+        }
         div[class*="st-key-desktop_backup_buttons"] div[data-testid="stHorizontalBlock"],
         div[class*="st-key-mobile_backup_controls"] div[data-testid="stHorizontalBlock"] {
           display: flex !important;
@@ -2189,25 +2199,32 @@ def inject_css() -> None:
         }
         div[class*="st-key-desktop_backup_buttons"] button,
         div[class*="st-key-mobile_backup_controls"] button {
-          min-height: 1.48rem !important;
-          height: 1.48rem !important;
-          padding: 0 0.36rem !important;
-          font-size: 0.66rem !important;
+          width: 100% !important;
+          min-width: 0 !important;
+          box-sizing: border-box !important;
+          min-height: 1.42rem !important;
+          height: 1.42rem !important;
+          padding: 0 0.28rem !important;
+          font-size: 0.6rem !important;
           line-height: 1 !important;
           white-space: nowrap !important;
         }
         div[class*="st-key-desktop_backup_buttons"] button p,
         div[class*="st-key-mobile_backup_controls"] button p {
-          font-size: 0.66rem !important;
+          font-size: 0.6rem !important;
           line-height: 1 !important;
           white-space: nowrap !important;
         }
         .sidebar-update-inline {
           color: var(--faint);
           font-size: 0.68rem;
-          line-height: 1.48rem;
+          line-height: 1;
           text-align: center;
           white-space: nowrap;
+          min-height: 1.42rem;
+          display: flex;
+          align-items: center;
+          justify-content: center;
         }
         .mobile-app-title {
           color: var(--ink);
@@ -2308,6 +2325,36 @@ def inject_css() -> None:
           div[class*="st-key-mobile_controls"] button[data-testid="stPopoverButton"] p {
             font-size: 0.82rem;
             line-height: 1;
+          }
+          div[class*="st-key-mobile_backup_controls"] {
+            margin-top: 0.34rem;
+          }
+          div[class*="st-key-mobile_backup_controls"] > div[data-testid="stVerticalBlock"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] {
+            display: grid !important;
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            gap: 0.34rem !important;
+            align-items: center !important;
+          }
+          div[class*="st-key-mobile_backup_controls"] > div[data-testid="stVerticalBlock"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
+            width: auto !important;
+            min-width: 0 !important;
+            flex: none !important;
+          }
+          div[class*="st-key-mobile_backup_controls"] button,
+          div[class*="st-key-mobile_backup_controls"] button p {
+            font-size: 0.56rem !important;
+          }
+          div[class*="st-key-mobile_controls"] div[class*="st-key-mobile_backup_controls"] button,
+          div[class*="st-key-mobile_controls"] div[class*="st-key-mobile_backup_controls"] button[data-testid="stPopoverButton"] {
+            width: 100% !important;
+            min-width: 0 !important;
+            min-height: 1.36rem !important;
+            height: 1.36rem !important;
+            padding: 0 0.16rem !important;
+          }
+          div[class*="st-key-mobile_controls"] div[class*="st-key-mobile_backup_controls"] button p {
+            font-size: 0.54rem !important;
+            line-height: 1 !important;
           }
           div[class*="st-key-card_"] {
             margin-bottom: 0.54rem;
@@ -2841,28 +2888,28 @@ def render_mobile_controls() -> None:
                     refresh_all_prices()
                 except Exception as error:
                     st.error(str(error))
-        with st.container(key="mobile_backup_controls"):
-            backup_cols = st.columns(2, gap="small")
-            with backup_cols[0]:
-                st.download_button(
-                    "匯出資料",
-                    data=export_items_text(),
-                    file_name=f"warrant_watch_{today_compact()}.json",
-                    mime="application/json",
-                    use_container_width=True,
-                    key="mobile_export_items",
-                )
-            with backup_cols[1]:
-                with st.popover("匯入資料", use_container_width=True):
-                    raw_text = st.text_area("貼上備份 JSON", key="mobile_import_items_text", height=140)
-                    replace = st.checkbox("取代目前清單", value=True, key="mobile_import_replace")
-                    if st.button("確認匯入", use_container_width=True, key="mobile_import_submit"):
-                        try:
-                            count = import_items(raw_text, replace=replace)
-                            st.toast(f"已匯入 {count} 檔")
-                            st.rerun()
-                        except Exception as error:
-                            st.error(str(error))
+            with st.container(key="mobile_backup_controls"):
+                backup_cols = st.columns(2, gap="small")
+                with backup_cols[0]:
+                    st.download_button(
+                        "匯出資料",
+                        data=export_items_text(),
+                        file_name=f"warrant_watch_{today_compact()}.json",
+                        mime="application/json",
+                        use_container_width=True,
+                        key="mobile_export_items",
+                    )
+                with backup_cols[1]:
+                    with st.popover("匯入資料", use_container_width=True):
+                        raw_text = st.text_area("貼上備份 JSON", key="mobile_import_items_text", height=140)
+                        replace = st.checkbox("取代目前清單", value=True, key="mobile_import_replace")
+                        if st.button("確認匯入", use_container_width=True, key="mobile_import_submit"):
+                            try:
+                                count = import_items(raw_text, replace=replace)
+                                st.toast(f"已匯入 {count} 檔")
+                                st.rerun()
+                            except Exception as error:
+                                st.error(str(error))
 
 
 def render_sidebar() -> None:
