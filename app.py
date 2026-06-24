@@ -33,7 +33,7 @@ YUANTA_QUOTE = "https://www.warrantwin.com.tw/eyuanta/ws/Quote.ashx"
 KGI_SERVICE = "https://warrant.kgi.com/EDWebService/WSInterfaceSwap.asmx/GetService"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.5"
+APP_VERSION = "W1.0.5a"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
@@ -1952,11 +1952,36 @@ def inject_css() -> None:
           background: rgba(251, 188, 4, 0.14);
           box-shadow: 0 0 0 1px rgba(251, 188, 4, 0.16), 0 0 12px rgba(251, 188, 4, 0.16);
         }
-        div[class*="st-key-vol_pop_lit_"] button[data-testid="stPopoverButton"] {
+        div[class*="st-key-vol_pop_"] button[data-testid="stPopoverButton"] {
+          display: grid;
+          place-items: center;
+          width: 1.55rem;
+          min-width: 1.55rem;
+          height: 1.55rem;
+          min-height: 1.55rem;
+          padding: 0 !important;
+          border: 1px solid var(--line);
+          border-radius: 999px;
+          background: var(--surface-soft);
+          color: var(--accent-strong);
+          line-height: 1;
+        }
+        div[class*="st-key-vol_pop_"] button[data-testid="stPopoverButton"] p {
+          font-size: 1rem;
+          line-height: 1;
+          margin: 0;
+        }
+        div[class*="st-key-vol_pop_warning_"] button[data-testid="stPopoverButton"] {
           color: #fdd663;
           border-color: #fbbc04;
           background: rgba(251, 188, 4, 0.14);
           box-shadow: 0 0 0 1px rgba(251, 188, 4, 0.16), 0 0 12px rgba(251, 188, 4, 0.16);
+        }
+        div[class*="st-key-vol_pop_alert_"] button[data-testid="stPopoverButton"] {
+          color: var(--danger);
+          border-color: var(--danger);
+          background: rgba(242, 139, 130, 0.14);
+          box-shadow: 0 0 0 1px rgba(242, 139, 130, 0.16), 0 0 12px rgba(242, 139, 130, 0.16);
         }
         div[class*="st-key-vol_pop_dim_"] button[data-testid="stPopoverButton"] {
           color: var(--accent-strong);
@@ -2323,6 +2348,15 @@ def inject_css() -> None:
             height: 1.38rem;
             font-size: 0.9rem;
           }
+          div[class*="st-key-vol_pop_"] button[data-testid="stPopoverButton"] {
+            width: 1.38rem;
+            min-width: 1.38rem;
+            height: 1.38rem;
+            min-height: 1.38rem;
+          }
+          div[class*="st-key-vol_pop_"] button[data-testid="stPopoverButton"] p {
+            font-size: 0.9rem;
+          }
           .metric-label {
             font-size: 0.66rem;
           }
@@ -2500,7 +2534,9 @@ def inject_css() -> None:
 
 def render_volatility_popover(item: dict[str, Any], index: int, card_id: str, prefix: str) -> None:
     lit = bool(item.get("volatilityAlerted"))
-    wrapper_key = f"vol_pop_{'lit' if lit else 'dim'}_{prefix}_{card_id}"
+    history_count = len(normalize_volatility_history(item.get("volatilityHistory")))
+    state = "alert" if history_count >= 2 else "warning" if lit else "dim"
+    wrapper_key = f"vol_pop_{state}_{prefix}_{card_id}"
     confirm_key = f"confirm_reset_vol_{prefix}_{card_id}"
     button_key = f"reset_vol_{prefix}_{card_id}"
     with st.container(key=wrapper_key):
