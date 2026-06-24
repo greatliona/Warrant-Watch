@@ -33,7 +33,7 @@ YUANTA_QUOTE = "https://www.warrantwin.com.tw/eyuanta/ws/Quote.ashx"
 KGI_SERVICE = "https://warrant.kgi.com/EDWebService/WSInterfaceSwap.asmx/GetService"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.6a"
+APP_VERSION = "W1.0.6c"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
@@ -1380,12 +1380,45 @@ def format_tracking_time(value: Any) -> str:
     return parsed.strftime("%m/%d %H:%M")
 
 
+def migrate_legacy_volatility_history(existing: dict[str, Any], history: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if history or not existing.get("volatilityAlerted"):
+        return history
+
+    current = to_number(existing.get("volatility"))
+    previous = to_number(existing.get("previousVolatility"))
+    change = to_number(existing.get("volatilityChangePoints"))
+    if previous is None and current is not None and change is not None:
+        previous = current - (change / 100)
+    if change is None and previous is not None and current is not None:
+        change = (current - previous) * 100
+    changed_at = (
+        existing.get("volatilityLastAlertAt")
+        or existing.get("volatilityFirstAlertAt")
+        or existing.get("volatilityLastCheckAt")
+        or datetime.now(TAIPEI).isoformat()
+    )
+    if previous is None or current is None or change is None:
+        return history
+    return [
+        {
+            "changedAt": str(changed_at),
+            "previousVolatility": previous,
+            "currentVolatility": current,
+            "changePoints": change,
+            "direction": existing.get("volatilityDirection") or ("up" if change > 0 else "down" if change < 0 else "flat"),
+        }
+    ]
+
+
 def apply_volatility_tracking(item: dict[str, Any], existing: dict[str, Any] | None) -> dict[str, Any]:
     existing = existing or {}
     current_volatility = to_number(item.get("volatility"))
     previous_volatility = to_number(existing.get("volatility"))
     previous_alerted = bool(existing.get("volatilityAlerted"))
-    history = normalize_volatility_history(existing.get("volatilityHistory"))
+    history = migrate_legacy_volatility_history(
+        existing,
+        normalize_volatility_history(existing.get("volatilityHistory")),
+    )
     last_record = history[-1] if history else {}
     last_recorded_volatility = to_number(last_record.get("currentVolatility"))
     now = datetime.now(TAIPEI).isoformat()
@@ -1393,28 +1426,28 @@ def apply_volatility_tracking(item: dict[str, Any], existing: dict[str, Any] | N
     item["volatilityAlerted"] = previous_alerted
     item["volatilityAlertThreshold"] = VOLATILITY_ALERT_POINTS
     item["volatilityHistory"] = history
-    item["previousVolatility"] = last_recorded_volatility if previous_alerted and last_recorded_volatility is not None else previous_volatility
-    item["volatilityChangePoints"] = None
+    item["previousVolatility"] = existing.get("previousVolatility")
+    item["volatilityChangePoints"] = existing.get("volatilityChangePoints")
     item["volatilityDirection"] = existing.get("volatilityDirection") or ""
     item["volatilityFirstAlertAt"] = existing.get("volatilityFirstAlertAt") or ""
     item["volatilityLastAlertAt"] = existing.get("volatilityLastAlertAt") or ""
     item["volatilityLastCheckAt"] = now
 
-    baseline_volatility = to_number(item.get("previousVolatility"))
+    baseline_volatility = last_recorded_volatility
+    if baseline_volatility is None:
+        baseline_volatility = to_number(existing.get("volatility"))
+    if baseline_volatility is None:
+        baseline_volatility = previous_volatility
     if current_volatility is None or baseline_volatility is None:
         return item
 
     change_points = (current_volatility - baseline_volatility) * 100
-    item["volatilityChangePoints"] = change_points
-    if change_points > 0:
-        item["volatilityDirection"] = "up"
-    elif change_points < 0:
-        item["volatilityDirection"] = "down"
-    else:
-        item["volatilityDirection"] = "flat"
-
     if abs(change_points) >= VOLATILITY_ALERT_POINTS:
+        direction = "up" if change_points > 0 else "down" if change_points < 0 else "flat"
         item["volatilityAlerted"] = True
+        item["previousVolatility"] = baseline_volatility
+        item["volatilityChangePoints"] = change_points
+        item["volatilityDirection"] = direction
         item["volatilityLastAlertAt"] = now
         if not item["volatilityFirstAlertAt"]:
             item["volatilityFirstAlertAt"] = now
@@ -1425,11 +1458,9 @@ def apply_volatility_tracking(item: dict[str, Any], existing: dict[str, Any] | N
                     "previousVolatility": baseline_volatility,
                     "currentVolatility": current_volatility,
                     "changePoints": change_points,
-                    "direction": item["volatilityDirection"],
+                    "direction": direction,
                 }
             )
-    else:
-        item["volatilityLastAlertAt"] = existing.get("volatilityLastAlertAt") or ""
     return item
 
 
