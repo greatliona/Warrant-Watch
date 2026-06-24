@@ -33,7 +33,7 @@ YUANTA_QUOTE = "https://www.warrantwin.com.tw/eyuanta/ws/Quote.ashx"
 KGI_SERVICE = "https://warrant.kgi.com/EDWebService/WSInterfaceSwap.asmx/GetService"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.5a"
+APP_VERSION = "W1.0.6a"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
@@ -691,7 +691,7 @@ def fetch_quote(market: str, code: str) -> dict[str, Any] | None:
         "ex_ch": f"{market}_{code}.tw",
         "json": "1",
         "delay": "0",
-        "_": str(int(time.time() * 1000)),
+        "__": str(int(time.time() * 1000)),
     }
     endpoint = f"{TWSE_MIS}?{urlencode(params)}"
     return normalize_quote(fetch_json(endpoint), market, code)
@@ -1048,11 +1048,13 @@ def load_warrant(code: str, existing: dict[str, Any] | None = None) -> dict[str,
             yuanta_error = str(error)
             yuanta = None
 
-    quote = (
-        fetch_quote_with_fallback(normalized, info.get("warrantMarket") or "tse")
-        or quote_from_kgi(kgi_warrant, normalized)
-        or quote_from_yuanta(yuanta, normalized)
-    )
+    if issuer == "yuanta":
+        quote = quote_from_yuanta(yuanta, normalized)
+    elif issuer == "kgi":
+        quote = quote_from_kgi(kgi_warrant, normalized)
+    else:
+        quote = None
+
     if not quote:
         details = "；".join(message for message in (yuanta_error, kgi_error) if message)
         raise WarrantError(f"查無權證即時報價{f'：{details}' if details else ''}")
@@ -1124,7 +1126,7 @@ def load_warrant(code: str, existing: dict[str, Any] | None = None) -> dict[str,
             kgi_error = str(error)
             fair_from_kgi = None
 
-    market_reference = quote_reference(quote)
+    market_reference = quote.get("bestBid") if quote else None
     spot = first_number(pricing["underlyingPrice"], quote_reference(underlying_quote))
     item = {
         "id": (existing or {}).get("id") or str(uuid.uuid4()),
@@ -1431,23 +1433,6 @@ def apply_volatility_tracking(item: dict[str, Any], existing: dict[str, Any] | N
     return item
 
 
-def reset_volatility_tracking(index: int) -> None:
-    item = st.session_state["items"][index]
-    current_volatility = to_number(item.get("volatility"))
-    now = datetime.now(TAIPEI).isoformat()
-    item["volatilityAlerted"] = False
-    item["previousVolatility"] = current_volatility
-    item["volatilityChangePoints"] = None
-    item["volatilityDirection"] = ""
-    item["volatilityFirstAlertAt"] = ""
-    item["volatilityLastAlertAt"] = ""
-    item["volatilityLastCheckAt"] = now
-    item["volatilityHistory"] = []
-    persist_current_items()
-    st.toast(f"{item.get('code')} 已重新開始追蹤隱波")
-    st.rerun()
-
-
 def volatility_tracking_text(item: dict[str, Any]) -> str:
     history = normalize_volatility_history(item.get("volatilityHistory"))
     if history:
@@ -1559,7 +1544,13 @@ def detail_row_html(label: str, value: str) -> str:
 def detail_html(item: dict[str, Any]) -> str:
     quote = item.get("quote") or {}
     underlying_quote = item.get("underlyingQuote") or {}
-    star_class = "native-detail-popover volatility-lit" if item.get("volatilityAlerted") else "native-detail-popover"
+    volatility_history = normalize_volatility_history(item.get("volatilityHistory"))
+    if len(volatility_history) >= 2:
+        star_class = "native-detail-popover volatility-alert"
+    elif item.get("volatilityAlerted"):
+        star_class = "native-detail-popover volatility-lit"
+    else:
+        star_class = "native-detail-popover"
     star_text = "★" if item.get("volatilityAlerted") else "☆"
     star_title = "隱波已變動，點擊查看追蹤" if item.get("volatilityAlerted") else "權證細節"
     rows = [
@@ -1576,6 +1567,8 @@ def detail_html(item: dict[str, Any]) -> str:
         ("委買/委賣", f"{format_number(quote.get('bestBid'))} / {format_number(quote.get('bestAsk'))}"),
         ("標的市場", f"{underlying_quote.get('market') or '--'}"),
     ]
+    for record_index, entry in enumerate(reversed(volatility_history), start=1):
+        rows.append((f"變動 {record_index}", volatility_history_detail_text(entry)))
     body = "".join(detail_row_html(label, value) for label, value in rows)
     return (
         f'<details class="{star_class}">'
@@ -1685,6 +1678,18 @@ def delete_item(index: int) -> None:
     st.rerun()
 
 
+def reset_volatility_tracking(item: dict[str, Any]) -> None:
+    item["volatilityAlerted"] = False
+    item["previousVolatility"] = item.get("volatility")
+    item["volatilityChangePoints"] = 0
+    item["volatilityDirection"] = "flat"
+    item["volatilityFirstAlertAt"] = ""
+    item["volatilityLastAlertAt"] = ""
+    item["volatilityHistory"] = []
+    persist_current_items()
+    st.toast(f"{item.get('code')} 已重置隱波紀錄")
+
+
 def inject_css() -> None:
     st.markdown(
         """
@@ -1736,7 +1741,8 @@ def inject_css() -> None:
         section[data-testid="stSidebar"] [data-testid="stCaptionContainer"],
         section[data-testid="stSidebar"] label,
         section[data-testid="stSidebar"] [data-testid="stMetricLabel"] {
-          color: var(--muted);
+          color: var(--faint);
+          font-size: 0.68rem;
         }
         div[data-testid="stTextInput"] input,
         div[data-testid="stNumberInput"] input {
@@ -1791,7 +1797,8 @@ def inject_css() -> None:
           font-size: 1rem;
           line-height: 1;
         }
-        button[data-testid="stPopoverButton"] span[data-testid="stIconMaterial"] {
+        button[data-testid="stPopoverButton"] span[data-testid="stIconMaterial"],
+        button[data-testid="stPopoverButton"] svg {
           display: none;
         }
         div[data-testid="stPopoverBody"] {
@@ -1904,23 +1911,6 @@ def inject_css() -> None:
           gap: 5px;
           min-width: 0;
         }
-        div[class*="st-key-card_header_"] {
-          margin-bottom: 0.46rem;
-        }
-        div[class*="st-key-card_header_"] div[data-testid="stHorizontalBlock"] {
-          align-items: start !important;
-          gap: 0.44rem !important;
-        }
-        div[class*="st-key-card_header_"] .warrant-title {
-          padding-top: 0.16rem;
-        }
-        div[class*="st-key-mobile_header_"] {
-          margin-bottom: 0.36rem;
-        }
-        div[class*="st-key-mobile_header_"] div[data-testid="stHorizontalBlock"] {
-          align-items: start !important;
-          gap: 0.34rem !important;
-        }
         .native-detail-popover {
           position: relative;
           flex: 0 0 auto;
@@ -1952,39 +1942,11 @@ def inject_css() -> None:
           background: rgba(251, 188, 4, 0.14);
           box-shadow: 0 0 0 1px rgba(251, 188, 4, 0.16), 0 0 12px rgba(251, 188, 4, 0.16);
         }
-        div[class*="st-key-vol_pop_"] button[data-testid="stPopoverButton"] {
-          display: grid;
-          place-items: center;
-          width: 1.55rem;
-          min-width: 1.55rem;
-          height: 1.55rem;
-          min-height: 1.55rem;
-          padding: 0 !important;
-          border: 1px solid var(--line);
-          border-radius: 999px;
-          background: var(--surface-soft);
-          color: var(--accent-strong);
-          line-height: 1;
-        }
-        div[class*="st-key-vol_pop_"] button[data-testid="stPopoverButton"] p {
-          font-size: 1rem;
-          line-height: 1;
-          margin: 0;
-        }
-        div[class*="st-key-vol_pop_warning_"] button[data-testid="stPopoverButton"] {
-          color: #fdd663;
-          border-color: #fbbc04;
-          background: rgba(251, 188, 4, 0.14);
-          box-shadow: 0 0 0 1px rgba(251, 188, 4, 0.16), 0 0 12px rgba(251, 188, 4, 0.16);
-        }
-        div[class*="st-key-vol_pop_alert_"] button[data-testid="stPopoverButton"] {
+        .native-detail-popover.volatility-alert summary {
           color: var(--danger);
           border-color: var(--danger);
           background: rgba(242, 139, 130, 0.14);
           box-shadow: 0 0 0 1px rgba(242, 139, 130, 0.16), 0 0 12px rgba(242, 139, 130, 0.16);
-        }
-        div[class*="st-key-vol_pop_dim_"] button[data-testid="stPopoverButton"] {
-          color: var(--accent-strong);
         }
         .native-detail-body {
           position: absolute;
@@ -2054,70 +2016,83 @@ def inject_css() -> None:
           font-weight: 850;
           white-space: nowrap;
         }
+        
+        /* === Desktop Action Buttons Layout === */
         div[class*="st-key-card_actions_"] > div[data-testid="stVerticalBlock"] {
-          display: grid !important;
-          align-content: start !important;
-          justify-items: center !important;
-          gap: 0.18rem !important;
+          display: flex !important;
+          flex-direction: column !important;
+          align-items: center !important;
+          gap: 0 !important;
+        }
+        div[class*="st-key-btn_grid_"] [data-testid="stHorizontalBlock"] {
+          display: flex !important;
+          flex-direction: row !important;
+          gap: 0 !important;
+          justify-content: space-between !important;
+          width: 100% !important;
+        }
+        div[class*="st-key-btn_grid_"] [data-testid="stColumn"] {
+          flex: 0 0 1.45rem !important;
+          width: 1.45rem !important;
+          min-width: 1.45rem !important;
+        }
+        div[class*="st-key-btn_grid_"] [data-testid="stColumn"] > div[data-testid="stVerticalBlock"] {
+          gap: 0.36rem !important;
         }
         .desktop-action-spacer {
-          height: 3.05rem;
+          height: 3.7rem;
         }
+        
+        /* Absolute centering for all action buttons (Desktop & Mobile) */
+        div[class*="st-key-card_action_"] button,
+        div[class*="st-key-delete_"] button,
+        div[class*="st-key-reset_"] button[data-testid="stPopoverButton"],
+        div[class*="st-key-mobile_action_"] button,
+        div[class*="st-key-mobile_delete_"] button,
+        div[class*="st-key-mobile_reset_"] button[data-testid="stPopoverButton"] {
+          width: 100% !important;
+          height: 1.45rem !important;
+          min-height: 1.45rem !important;
+          padding: 0 !important;
+          margin: 0 !important;
+          border-radius: 6px !important;
+          display: flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          color: var(--ink) !important;
+        }
+        div[class*="st-key-card_action_"] button *,
+        div[class*="st-key-delete_"] button *,
+        div[class*="st-key-reset_"] button[data-testid="stPopoverButton"] *,
+        div[class*="st-key-mobile_action_"] button *,
+        div[class*="st-key-mobile_delete_"] button *,
+        div[class*="st-key-mobile_reset_"] button[data-testid="stPopoverButton"] * {
+          margin: 0 !important;
+          padding: 0 !important;
+          line-height: 1 !important;
+          display: flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+        }
+        
         div[class*="st-key-card_action_"],
-        div[class*="st-key-delete_"] {
+        div[class*="st-key-delete_"],
+        div[class*="st-key-reset_"] {
           display: flex;
           align-items: center;
           justify-content: center;
-          height: 1.28rem;
+          height: 1.45rem;
           margin: 0 !important;
         }
-        div[class*="st-key-card_action_"] button,
-        div[class*="st-key-delete_"] button {
-          width: 1.28rem;
-          min-width: 1.28rem;
-          min-height: 1.28rem;
-          height: 1.28rem;
-          padding: 0;
-          border-radius: 6px;
-          font-size: 0.7rem;
-          line-height: 1;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
+        
+        div[class*="st-key-reset_"] button[data-testid="stPopoverButton"] p {
+          font-size: 1.15rem !important;
+          font-weight: 400 !important;
         }
         div[class*="st-key-delete_"] button {
-          color: var(--danger);
+          color: var(--danger) !important;
         }
-        .sidebar-update-time {
-          color: var(--faint);
-          font-size: 0.76rem;
-          line-height: 1.2;
-          margin-top: 0.2rem;
-          margin-bottom: 0.35rem;
-          text-align: center;
-        }
-        .sidebar-status {
-          display: flex;
-          align-items: center;
-          justify-content: flex-start;
-          gap: 0.22rem;
-          min-height: 2rem;
-          min-width: 0;
-        }
-        .sidebar-status span {
-          color: var(--muted);
-          font-size: 0.82rem;
-          line-height: 1;
-          font-weight: 850;
-          white-space: nowrap;
-        }
-        .sidebar-status strong {
-          color: var(--ink);
-          font-size: 0.82rem;
-          line-height: 1;
-          font-weight: 850;
-          white-space: nowrap;
-        }
+        
         .card-error-note {
           box-sizing: border-box;
           width: max-content;
@@ -2129,22 +2104,6 @@ def inject_css() -> None:
           line-height: 1.25;
           font-weight: 750;
           overflow-wrap: anywhere;
-        }
-        .app-version,
-        .mobile-version,
-        .mobile-update-time {
-          color: var(--faint);
-          font-size: 0.68rem;
-          line-height: 1.15;
-          letter-spacing: 0;
-        }
-        .app-version {
-          margin: -0.1rem 0 0.58rem;
-        }
-        .mobile-version,
-        .mobile-update-time {
-          margin-top: 0.26rem;
-          text-align: center;
         }
         .detail-line {
           display: grid;
@@ -2169,39 +2128,6 @@ def inject_css() -> None:
           color: var(--muted);
           font-size: 0.8rem;
           line-height: 1.2;
-        }
-        .mobile-status {
-          display: flex;
-          align-items: baseline;
-          justify-content: center;
-          gap: 0.22rem;
-          min-width: 0;
-        }
-        .mobile-status-stack {
-          display: grid;
-          place-items: center;
-          gap: 0.08rem;
-          min-width: 0;
-        }
-        .mobile-status span {
-          color: var(--muted);
-          font-size: 0.74rem;
-          line-height: 1.05;
-          white-space: nowrap;
-        }
-        .mobile-status strong {
-          color: var(--ink);
-          font-size: 0.78rem;
-          line-height: 1;
-          font-weight: 850;
-        }
-        .mobile-status small {
-          color: var(--faint);
-          font-size: 0.66rem;
-          line-height: 1;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
         }
         .mobile-app-title {
           color: var(--ink);
@@ -2234,7 +2160,6 @@ def inject_css() -> None:
           gap: 0.54rem;
           grid-column: 1 / -1;
           padding-right: 0;
-          margin-bottom: 0.48rem;
         }
         .mobile-calc-output {
           min-width: 0;
@@ -2286,20 +2211,6 @@ def inject_css() -> None:
             font-weight: 850;
             white-space: nowrap;
           }
-          div[class*="st-key-mobile_controls"] div[data-testid="stVerticalBlock"] {
-            gap: 0.2rem;
-          }
-          div[class*="st-key-mobile_controls"] div[data-testid="stHorizontalBlock"] {
-            display: grid !important;
-            grid-template-columns: 4.6rem minmax(0, 1fr) 7.2rem !important;
-            gap: 0.5rem !important;
-            align-items: center !important;
-          }
-          div[class*="st-key-mobile_controls"] div[data-testid="stHorizontalBlock"] > div {
-            width: auto !important;
-            min-width: 0 !important;
-            flex: none !important;
-          }
           div[class*="st-key-mobile_controls"] .stButton > button {
             min-height: 1.9rem;
             height: 1.9rem;
@@ -2332,29 +2243,29 @@ def inject_css() -> None:
             border-radius: 8px !important;
             padding: 0.58rem 0.56rem 0.8rem !important;
           }
+          
+          /* Strict Card Layout (Left Content vs Right Actions) */
           div[class*="st-key-mobile_card_"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] {
-            display: grid !important;
-            grid-template-columns: minmax(0, 1fr) 1.38rem !important;
+            display: flex !important;
+            flex-direction: row !important;
             gap: 0.42rem !important;
             align-items: stretch !important;
+            flex-wrap: nowrap !important;
           }
-          div[class*="st-key-mobile_card_"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
-            width: auto !important;
+          div[class*="st-key-mobile_card_"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-child(1) {
+            flex: 1 1 auto !important;
             min-width: 0 !important;
-            flex: none !important;
+            width: auto !important;
           }
+          div[class*="st-key-mobile_card_"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-child(2) {
+            flex: 0 0 2.95rem !important;
+            width: 2.95rem !important;
+            min-width: 2.95rem !important;
+          }
+          
           .native-detail-popover summary {
             width: 1.38rem;
             height: 1.38rem;
-            font-size: 0.9rem;
-          }
-          div[class*="st-key-vol_pop_"] button[data-testid="stPopoverButton"] {
-            width: 1.38rem;
-            min-width: 1.38rem;
-            height: 1.38rem;
-            min-height: 1.38rem;
-          }
-          div[class*="st-key-vol_pop_"] button[data-testid="stPopoverButton"] p {
             font-size: 0.9rem;
           }
           .metric-label {
@@ -2400,19 +2311,23 @@ def inject_css() -> None:
             background: var(--orange-soft);
             border-color: var(--orange-line);
           }
+          
+          /* Strict Calc Block Inner Layout to prevent blowout */
           div[class*="st-key-mobile_calc_forward_"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"],
           div[class*="st-key-mobile_calc_reverse_"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] {
-            display: grid !important;
-            grid-template-columns: minmax(4.2rem, 0.95fr) minmax(4.05rem, 1.05fr) !important;
+            display: flex !important;
+            flex-direction: row !important;
             gap: 0.3rem !important;
-            align-items: start !important;
+            justify-content: space-between !important;
+            flex-wrap: nowrap !important;
           }
           div[class*="st-key-mobile_calc_forward_"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"],
           div[class*="st-key-mobile_calc_reverse_"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
-            width: auto !important;
+            width: 48% !important;
+            flex: 0 0 48% !important;
             min-width: 0 !important;
-            flex: none !important;
           }
+          
           div[class*="st-key-mobile_calc_forward_"] label,
           div[class*="st-key-mobile_calc_reverse_"] label {
             height: 0.88rem;
@@ -2445,37 +2360,61 @@ def inject_css() -> None:
             min-height: 1.74rem;
             font-size: 0.84rem;
           }
+          
+          /* === Mobile Action Buttons Layout === */
           div[class*="st-key-mobile_actions_"] {
             height: 100%;
           }
-          div[class*="st-key-mobile_actions_"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stVerticalBlock"] {
-            display: grid !important;
-            align-content: start !important;
-            justify-items: center !important;
-            gap: 0.12rem !important;
-            min-height: 4.1rem;
+          div[class*="st-key-mobile_actions_"] > div[data-testid="stVerticalBlock"] {
+            display: flex !important;
+            flex-direction: column !important;
+            align-items: center !important;
+            gap: 0 !important;
+            min-height: 7.1rem;
+          }
+          div[class*="st-key-mobile_btn_grid_"] [data-testid="stHorizontalBlock"] {
+            display: flex !important;
+            flex-direction: row !important;
+            gap: 0 !important;
+            justify-content: space-between !important;
+            width: 100% !important;
+          }
+          div[class*="st-key-mobile_btn_grid_"] [data-testid="stColumn"] {
+            flex: 0 0 1.32rem !important;
+            width: 1.32rem !important;
+            min-width: 1.32rem !important;
+          }
+          div[class*="st-key-mobile_btn_grid_"] [data-testid="stColumn"] > div[data-testid="stVerticalBlock"] {
+            gap: 0.34rem !important;
           }
           .mobile-action-spacer {
-            height: 3.05rem;
+            height: 4.5rem;
           }
           div[class*="st-key-mobile_action_"],
-          div[class*="st-key-mobile_delete_"] {
-            height: 1.1rem;
+          div[class*="st-key-mobile_delete_"],
+          div[class*="st-key-mobile_reset_"] {
+            height: 1.32rem;
             margin: 0 !important;
+            display: flex;
+            align-items: center;
+            justify-content: center;
           }
           div[class*="st-key-mobile_action_"] button,
-          div[class*="st-key-mobile_delete_"] button {
-            width: 1.1rem;
-            min-width: 1.1rem;
-            min-height: 1.1rem;
-            height: 1.1rem;
-            font-size: 0.58rem;
-            padding: 0;
-            border-radius: 6px;
+          div[class*="st-key-mobile_delete_"] button,
+          div[class*="st-key-mobile_reset_"] button[data-testid="stPopoverButton"] {
+            height: 1.32rem !important;
+            width: 1.32rem !important;
+            min-width: 1.32rem !important;
+            font-size: 0.62rem !important;
+          }
+          div[class*="st-key-mobile_reset_"] button[data-testid="stPopoverButton"] p {
+            font-size: 1.15rem !important;
+            font-weight: 400 !important;
           }
           div[class*="st-key-mobile_delete_"] button {
-            color: var(--danger);
+            color: var(--danger) !important;
           }
+          
           .card-error-note {
             box-sizing: border-box;
             width: max-content;
@@ -2508,17 +2447,6 @@ def inject_css() -> None:
           div[class*="st-key-mobile_calc_reverse_"] {
             padding: 0.34rem 0.32rem 0.3rem;
           }
-          div[class*="st-key-mobile_calc_forward_"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"],
-          div[class*="st-key-mobile_calc_reverse_"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] {
-            grid-template-columns: minmax(3.75rem, 0.9fr) minmax(3.35rem, 1.1fr) !important;
-            gap: 0.2rem !important;
-          }
-          div[class*="st-key-mobile_calc_forward_"] input,
-          div[class*="st-key-mobile_calc_reverse_"] input {
-            font-size: 0.78rem;
-            padding-left: 0.34rem;
-            padding-right: 0.22rem;
-          }
           .calc-result-label {
             font-size: 0.66rem;
           }
@@ -2532,54 +2460,50 @@ def inject_css() -> None:
     )
 
 
-def render_volatility_popover(item: dict[str, Any], index: int, card_id: str, prefix: str) -> None:
-    lit = bool(item.get("volatilityAlerted"))
-    history_count = len(normalize_volatility_history(item.get("volatilityHistory")))
-    state = "alert" if history_count >= 2 else "warning" if lit else "dim"
-    wrapper_key = f"vol_pop_{state}_{prefix}_{card_id}"
-    confirm_key = f"confirm_reset_vol_{prefix}_{card_id}"
-    button_key = f"reset_vol_{prefix}_{card_id}"
-    with st.container(key=wrapper_key):
-        with st.popover("★" if lit else "☆"):
-            render_details(item)
-            st.markdown(
-                '<div class="small-note">重新開始後，這檔會用目前隱波作為新的追蹤基準。</div>',
-                unsafe_allow_html=True,
-            )
-            confirmed = st.checkbox("確認清除追蹤紀錄", key=confirm_key)
-            if st.button("重新開始記錄", key=button_key, disabled=not confirmed, use_container_width=True):
-                reset_volatility_tracking(index)
-
-
 def render_warrant_card(item: dict[str, Any], index: int) -> None:
     card_id = safe_key(item.get("id") or item.get("code") or str(index))
     with st.container(border=True, key=f"card_{card_id}"):
-        card_cols = st.columns([1.0, 0.08], gap="small")
+        card_cols = st.columns([1.0, 0.14], gap="small")
 
         changed = False
         with card_cols[1]:
             with st.container(key=f"card_actions_{card_id}"):
                 st.markdown('<div class="desktop-action-spacer"></div>', unsafe_allow_html=True)
-                if st.button("▲", key=f"card_action_up_{card_id}", disabled=index == 0, help="上移"):
-                    move_item(index, -1)
-                if st.button("▼", key=f"card_action_down_{card_id}", disabled=index == len(st.session_state["items"]) - 1, help="下移"):
-                    move_item(index, 1)
-                if st.button("×", key=f"delete_{card_id}", help="刪除這檔權證"):
-                    delete_item(index)
+                with st.container(key=f"btn_grid_{card_id}"):
+                    btn_l, btn_r = st.columns(2)
+                    with btn_l:
+                        with st.container(key=f"card_action_up_{card_id}"):
+                            if st.button("▲", key=f"up_{card_id}", disabled=index == 0, help="上移"):
+                                move_item(index, -1)
+                        with st.container(key=f"card_action_down_{card_id}"):
+                            if st.button("▼", key=f"dn_{card_id}", disabled=index == len(st.session_state["items"]) - 1, help="下移"):
+                                move_item(index, 1)
+                    with btn_r:
+                        with st.container(key=f"reset_{card_id}"):
+                            with st.popover("↺", help="重置隱波紀錄"):
+                                st.markdown("<div style='text-align: center; margin-bottom: 0.5rem; font-size: 0.85rem;'>確定重置隱波？</div>", unsafe_allow_html=True)
+                                if st.button("確認", key=f"confirm_reset_{card_id}", use_container_width=True):
+                                    reset_volatility_tracking(st.session_state["items"][index])
+                                    st.rerun()
+                        with st.container(key=f"delete_{card_id}"):
+                            with st.popover("×", help="刪除這檔權證"):
+                                st.markdown("<div style='text-align: center; margin-bottom: 0.5rem; font-size: 0.85rem;'>確定刪除？</div>", unsafe_allow_html=True)
+                                if st.button("確認", key=f"confirm_del_{card_id}", use_container_width=True):
+                                    delete_item(index)
 
         with card_cols[0]:
-            with st.container(key=f"card_header_{card_id}"):
-                header_cols = st.columns([1.0, 0.1, 0.22, 0.18, 0.32], gap="small")
-                with header_cols[0]:
-                    st.markdown(warrant_title_html(item), unsafe_allow_html=True)
-                with header_cols[1]:
-                    render_volatility_popover(item, index, card_id, "desktop")
-                with header_cols[2]:
-                    st.markdown(metric_html("合理價", item.get("fairPrice"), accent=True), unsafe_allow_html=True)
-                with header_cols[3]:
-                    st.markdown(metric_html("報價", item.get("marketReference")), unsafe_allow_html=True)
-                with header_cols[4]:
-                    st.markdown(metric_html("現貨股價", item.get("spot")), unsafe_allow_html=True)
+            st.markdown(
+                '<div class="card-header-grid">'
+                '<div class="card-title-cell">'
+                f"{warrant_title_html(item)}"
+                f"{detail_html(item)}"
+                "</div>"
+                + metric_html("合理價", item.get("fairPrice"), accent=True)
+                + metric_html("報價", item.get("marketReference"))
+                + metric_html("現貨股價", item.get("spot"))
+                + "</div>",
+                unsafe_allow_html=True,
+            )
 
             calc_cols = st.columns(2, gap="small")
             with calc_cols[0]:
@@ -2652,31 +2576,46 @@ def render_mobile_warrant_card(item: dict[str, Any], index: int) -> None:
     card_id = safe_key(item.get("id") or item.get("code") or str(index))
     changed = False
     with st.container(border=False, key=f"mobile_card_{card_id}"):
-        card_cols = st.columns([1.0, 0.08], gap="small")
+        card_cols = st.columns([1.0, 0.12], gap="small")
 
         with card_cols[1]:
             with st.container(key=f"mobile_actions_{card_id}"):
                 st.markdown('<div class="mobile-action-spacer"></div>', unsafe_allow_html=True)
-                if st.button("▲", key=f"mobile_action_up_{card_id}", disabled=index == 0, help="上移"):
-                    move_item(index, -1)
-                if st.button("▼", key=f"mobile_action_down_{card_id}", disabled=index == len(st.session_state["items"]) - 1, help="下移"):
-                    move_item(index, 1)
-                if st.button("×", key=f"mobile_delete_{card_id}", help="刪除這檔權證"):
-                    delete_item(index)
+                with st.container(key=f"mobile_btn_grid_{card_id}"):
+                    btn_l, btn_r = st.columns(2)
+                    with btn_l:
+                        with st.container(key=f"mobile_action_up_{card_id}"):
+                            if st.button("▲", key=f"m_up_{card_id}", disabled=index == 0, help="上移"):
+                                move_item(index, -1)
+                        with st.container(key=f"mobile_action_down_{card_id}"):
+                            if st.button("▼", key=f"m_dn_{card_id}", disabled=index == len(st.session_state["items"]) - 1, help="下移"):
+                                move_item(index, 1)
+                    with btn_r:
+                        with st.container(key=f"mobile_reset_{card_id}"):
+                            with st.popover("↺", help="重置隱波紀錄"):
+                                st.markdown("<div style='text-align: center; margin-bottom: 0.5rem; font-size: 0.85rem;'>確定重置隱波？</div>", unsafe_allow_html=True)
+                                if st.button("確認", key=f"m_confirm_reset_{card_id}", use_container_width=True):
+                                    reset_volatility_tracking(st.session_state["items"][index])
+                                    st.rerun()
+                        with st.container(key=f"mobile_delete_{card_id}"):
+                            with st.popover("×", help="刪除這檔權證"):
+                                st.markdown("<div style='text-align: center; margin-bottom: 0.5rem; font-size: 0.85rem;'>確定刪除？</div>", unsafe_allow_html=True)
+                                if st.button("確認", key=f"m_confirm_del_{card_id}", use_container_width=True):
+                                    delete_item(index)
 
         with card_cols[0]:
-            with st.container(key=f"mobile_header_{card_id}"):
-                title_cols = st.columns([1.0, 0.12], gap="small")
-                with title_cols[0]:
-                    st.markdown(warrant_title_html(item), unsafe_allow_html=True)
-                with title_cols[1]:
-                    render_volatility_popover(item, index, card_id, "mobile")
             st.markdown(
+                '<div class="mobile-card-header">'
+                '<div class="mobile-title">'
+                f"{warrant_title_html(item)}"
+                f"{detail_html(item)}"
+                "</div>"
                 '<div class="mobile-metrics">'
                 + metric_html("合理價", item.get("fairPrice"), accent=True)
                 + metric_html("報價", item.get("marketReference"))
                 + metric_html("現貨股價", item.get("spot"))
-                + "</div>",
+                + "</div>"
+                "</div>",
                 unsafe_allow_html=True,
             )
 
@@ -2751,7 +2690,6 @@ def render_mobile_warrant_card(item: dict[str, Any], index: int) -> None:
 def render_details(item: dict[str, Any]) -> None:
     quote = item.get("quote") or {}
     underlying_quote = item.get("underlyingQuote") or {}
-    volatility_history = normalize_volatility_history(item.get("volatilityHistory"))
     detail_line("類型", type_text(item.get("type") or "call"))
     detail_line("標的", f"{item.get('underlyingCode') or ''} {item.get('underlyingName') or ''}".strip())
     detail_line("履約價", format_number(item.get("strike")))
@@ -2760,9 +2698,6 @@ def render_details(item: dict[str, Any]) -> None:
     detail_line("評價日", item.get("evaluationDate") or "--")
     detail_line("合理價來源", item.get("fairPriceSource") or "--")
     detail_line("波動率", f"{item.get('volatilitySource') or '波動率'} {format_number((to_number(item.get('volatility')) or 0) * 100)}%")
-    detail_line("隱波追蹤", volatility_tracking_text(item))
-    for record_index, entry in enumerate(reversed(volatility_history), start=1):
-        detail_line(f"變動 {record_index}", volatility_history_detail_text(entry))
     detail_line("利率", f"{format_number((to_number(item.get('riskFreeRate')) or 0) * 100)}%")
     detail_line("委買/委賣", f"{format_number(quote.get('bestBid'))} / {format_number(quote.get('bestAsk'))}")
     detail_line("標的市場", f"{underlying_quote.get('market') or '--'}")
@@ -2800,8 +2735,17 @@ def render_main() -> None:
 
 def render_mobile_controls() -> None:
     with st.container(key="mobile_controls"):
-        control_cols = st.columns([0.26, 0.39, 0.35], gap="small")
-        with control_cols[0]:
+        st.markdown(
+            f'<div style="text-align: center; margin-bottom: 0.6rem; line-height: 1.4; word-wrap: break-word; white-space: normal;">'
+            f'<span style="color: var(--muted); font-size: 0.76rem;">已儲存 <strong style="color: var(--ink);">{len(st.session_state["items"])}</strong> 檔</span><br>'
+            f'<span style="color: var(--faint); font-size: 0.65rem;">評價日期: {today_compact()} | {html.escape(app_version_text())} | 儲存: {html.escape(storage_label())}</span><br>'
+            f'<span style="color: var(--faint); font-size: 0.65rem;">最近更新 {html.escape(latest_update_text(st.session_state["items"]))}</span>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+        btn_cols = st.columns(2, gap="small")
+        with btn_cols[0]:
             with st.popover("新增", use_container_width=True):
                 with st.form("add_warrant_form_mobile", clear_on_submit=True):
                     code = st.text_input("權證代號", placeholder="例如 030012", key="mobile_warrant_code").strip().upper()
@@ -2811,17 +2755,7 @@ def render_mobile_controls() -> None:
                         add_or_update_warrant(code)
                     except Exception as error:
                         st.error(str(error))
-        with control_cols[1]:
-            st.markdown(
-                '<div class="mobile-status-stack">'
-                '<div class="mobile-status">'
-                f'<span>已儲存 <strong>{len(st.session_state["items"])}</strong> 檔</span>'
-                "</div>"
-                f'<div class="mobile-update-time">最近更新 {html.escape(latest_update_text(st.session_state["items"]))}</div>'
-                "</div>",
-                unsafe_allow_html=True,
-            )
-        with control_cols[2]:
+        with btn_cols[1]:
             if st.button("更新價格", use_container_width=True, disabled=not st.session_state["items"], key="mobile_refresh_prices"):
                 try:
                     refresh_all_prices()
@@ -2832,12 +2766,14 @@ def render_mobile_controls() -> None:
 def render_sidebar() -> None:
     with st.sidebar:
         st.title("Warrant Watch!")
-        st.caption(f"評價日期: {today_compact()}")
         st.markdown(
-            f'<div class="app-version">{html.escape(app_version_text())}</div>',
+            f'<div style="color: var(--faint); font-size: 0.68rem; line-height: 1.5; margin-bottom: 0.8rem; word-wrap: break-word; white-space: normal;">'
+            f'評價日期: {today_compact()}<br>'
+            f'{html.escape(app_version_text())}<br>'
+            f'儲存: {html.escape(storage_label())}'
+            f'</div>',
             unsafe_allow_html=True,
         )
-        st.caption(f"儲存: {storage_label()}")
 
         with st.form("add_warrant_form", clear_on_submit=True):
             code = st.text_input("權證代號", placeholder="例如 030012").strip().upper()
@@ -2862,10 +2798,12 @@ def render_sidebar() -> None:
                     refresh_all_prices()
                 except Exception as error:
                     st.error(str(error))
-        st.markdown(
-            f'<div class="sidebar-update-time">最近更新 {html.escape(latest_update_text(st.session_state["items"]))}</div>',
-            unsafe_allow_html=True,
-        )
+            st.markdown(
+                f'<div style="color: var(--faint); font-size: 0.68rem; text-align: center; margin-top: 0.25rem;">'
+                f'最近更新 {html.escape(latest_update_text(st.session_state["items"]))}'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
 
 
 def main() -> None:
