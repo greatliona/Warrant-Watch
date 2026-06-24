@@ -33,7 +33,7 @@ YUANTA_QUOTE = "https://www.warrantwin.com.tw/eyuanta/ws/Quote.ashx"
 KGI_SERVICE = "https://warrant.kgi.com/EDWebService/WSInterfaceSwap.asmx/GetService"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.6d"
+APP_VERSION = "W1.0.6e"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
@@ -2170,6 +2170,45 @@ def inject_css() -> None:
           font-size: 0.8rem;
           line-height: 1.2;
         }
+        div[class*="st-key-desktop_backup_row"] {
+          margin-top: 0.28rem;
+        }
+        div[class*="st-key-desktop_backup_buttons"] div[data-testid="stHorizontalBlock"],
+        div[class*="st-key-mobile_backup_controls"] div[data-testid="stHorizontalBlock"] {
+          display: flex !important;
+          flex-direction: row !important;
+          flex-wrap: nowrap !important;
+          gap: 0.44rem !important;
+          align-items: center !important;
+        }
+        div[class*="st-key-desktop_backup_buttons"] div[data-testid="stColumn"],
+        div[class*="st-key-mobile_backup_controls"] div[data-testid="stColumn"] {
+          width: 50% !important;
+          min-width: 0 !important;
+          flex: 1 1 0 !important;
+        }
+        div[class*="st-key-desktop_backup_buttons"] button,
+        div[class*="st-key-mobile_backup_controls"] button {
+          min-height: 1.48rem !important;
+          height: 1.48rem !important;
+          padding: 0 0.36rem !important;
+          font-size: 0.66rem !important;
+          line-height: 1 !important;
+          white-space: nowrap !important;
+        }
+        div[class*="st-key-desktop_backup_buttons"] button p,
+        div[class*="st-key-mobile_backup_controls"] button p {
+          font-size: 0.66rem !important;
+          line-height: 1 !important;
+          white-space: nowrap !important;
+        }
+        .sidebar-update-inline {
+          color: var(--faint);
+          font-size: 0.68rem;
+          line-height: 1.48rem;
+          text-align: center;
+          white-space: nowrap;
+        }
         .mobile-app-title {
           color: var(--ink);
           font-size: 1.34rem;
@@ -2802,27 +2841,28 @@ def render_mobile_controls() -> None:
                     refresh_all_prices()
                 except Exception as error:
                     st.error(str(error))
-        backup_cols = st.columns(2, gap="small")
-        with backup_cols[0]:
-            st.download_button(
-                "匯出資料",
-                data=export_items_text(),
-                file_name=f"warrant_watch_{today_compact()}.json",
-                mime="application/json",
-                use_container_width=True,
-                key="mobile_export_items",
-            )
-        with backup_cols[1]:
-            with st.popover("匯入資料", use_container_width=True):
-                raw_text = st.text_area("貼上備份 JSON", key="mobile_import_items_text", height=140)
-                replace = st.checkbox("取代目前清單", value=True, key="mobile_import_replace")
-                if st.button("確認匯入", use_container_width=True, key="mobile_import_submit"):
-                    try:
-                        count = import_items(raw_text, replace=replace)
-                        st.toast(f"已匯入 {count} 檔")
-                        st.rerun()
-                    except Exception as error:
-                        st.error(str(error))
+        with st.container(key="mobile_backup_controls"):
+            backup_cols = st.columns(2, gap="small")
+            with backup_cols[0]:
+                st.download_button(
+                    "匯出資料",
+                    data=export_items_text(),
+                    file_name=f"warrant_watch_{today_compact()}.json",
+                    mime="application/json",
+                    use_container_width=True,
+                    key="mobile_export_items",
+                )
+            with backup_cols[1]:
+                with st.popover("匯入資料", use_container_width=True):
+                    raw_text = st.text_area("貼上備份 JSON", key="mobile_import_items_text", height=140)
+                    replace = st.checkbox("取代目前清單", value=True, key="mobile_import_replace")
+                    if st.button("確認匯入", use_container_width=True, key="mobile_import_submit"):
+                        try:
+                            count = import_items(raw_text, replace=replace)
+                            st.toast(f"已匯入 {count} 檔")
+                            st.rerun()
+                        except Exception as error:
+                            st.error(str(error))
 
 
 def render_sidebar() -> None:
@@ -2860,33 +2900,36 @@ def render_sidebar() -> None:
                     refresh_all_prices()
                 except Exception as error:
                     st.error(str(error))
-            st.markdown(
-                f'<div style="color: var(--faint); font-size: 0.68rem; text-align: center; margin-top: 0.25rem;">'
-                f'最近更新 {html.escape(latest_update_text(st.session_state["items"]))}'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-        backup_cols = st.columns(2, gap="small")
-        with backup_cols[0]:
-            st.download_button(
-                "匯出資料",
-                data=export_items_text(),
-                file_name=f"warrant_watch_{today_compact()}.json",
-                mime="application/json",
-                use_container_width=True,
-                key="desktop_export_items",
-            )
-        with backup_cols[1]:
-            with st.popover("匯入資料", use_container_width=True):
-                raw_text = st.text_area("貼上備份 JSON", key="desktop_import_items_text", height=140)
-                replace = st.checkbox("取代目前清單", value=True, key="desktop_import_replace")
-                if st.button("確認匯入", use_container_width=True, key="desktop_import_submit"):
-                    try:
-                        count = import_items(raw_text, replace=replace)
-                        st.toast(f"已匯入 {count} 檔")
-                        st.rerun()
-                    except Exception as error:
-                        st.error(str(error))
+        with st.container(key="desktop_backup_row"):
+            backup_row_cols = st.columns([0.52, 0.48], gap="small")
+            with backup_row_cols[0]:
+                with st.container(key="desktop_backup_buttons"):
+                    backup_cols = st.columns(2, gap="small")
+                    with backup_cols[0]:
+                        st.download_button(
+                            "匯出資料",
+                            data=export_items_text(),
+                            file_name=f"warrant_watch_{today_compact()}.json",
+                            mime="application/json",
+                            use_container_width=True,
+                            key="desktop_export_items",
+                        )
+                    with backup_cols[1]:
+                        with st.popover("匯入資料", use_container_width=True):
+                            raw_text = st.text_area("貼上備份 JSON", key="desktop_import_items_text", height=140)
+                            replace = st.checkbox("取代目前清單", value=True, key="desktop_import_replace")
+                            if st.button("確認匯入", use_container_width=True, key="desktop_import_submit"):
+                                try:
+                                    count = import_items(raw_text, replace=replace)
+                                    st.toast(f"已匯入 {count} 檔")
+                                    st.rerun()
+                                except Exception as error:
+                                    st.error(str(error))
+            with backup_row_cols[1]:
+                st.markdown(
+                    f'<div class="sidebar-update-inline">最近更新 {html.escape(latest_update_text(st.session_state["items"]))}</div>',
+                    unsafe_allow_html=True,
+                )
 
 
 def main() -> None:
