@@ -33,7 +33,7 @@ YUANTA_QUOTE = "https://www.warrantwin.com.tw/eyuanta/ws/Quote.ashx"
 KGI_SERVICE = "https://warrant.kgi.com/EDWebService/WSInterfaceSwap.asmx/GetService"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.6k"
+APP_VERSION = "W1.0.6l"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
@@ -1017,7 +1017,7 @@ def implied_spot_from_price(item: dict[str, Any], target_price: Any) -> float | 
             high *= 2
         if price_at(low) < target or price_at(high) > target:
             return None
-        for _ in range(18):
+        for _ in range(7):
             mid = (low + high) / 2
             if price_at(mid) > target:
                 low = mid
@@ -1029,7 +1029,7 @@ def implied_spot_from_price(item: dict[str, Any], target_price: Any) -> float | 
         high *= 2
     if price_at(low) > target or price_at(high) < target:
         return None
-    for _ in range(18):
+    for _ in range(7):
         mid = (low + high) / 2
         if price_at(mid) < target:
             low = mid
