@@ -33,7 +33,7 @@ YUANTA_QUOTE = "https://www.warrantwin.com.tw/eyuanta/ws/Quote.ashx"
 KGI_SERVICE = "https://warrant.kgi.com/EDWebService/WSInterfaceSwap.asmx/GetService"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.6j"
+APP_VERSION = "W1.0.6k"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
@@ -1109,10 +1109,11 @@ def load_warrant(code: str, existing: dict[str, Any] | None = None) -> dict[str,
     else:
         quote = None
 
-    try:
-        quote = merge_quote(quote, fetch_quote_with_fallback(normalized, info.get("warrantMarket") or "tse"))
-    except Exception:
-        pass
+    if not quote or quote_reference(quote) is None:
+        try:
+            quote = merge_quote(quote, fetch_quote_with_fallback(normalized, info.get("warrantMarket") or "tse"))
+        except Exception:
+            pass
 
     if not quote:
         details = "；".join(message for message in (yuanta_error, kgi_error, exchange_error) if message)
@@ -1144,7 +1145,7 @@ def load_warrant(code: str, existing: dict[str, Any] | None = None) -> dict[str,
         yuanta,
         info.get("underlyingMarket") or info.get("warrantMarket") or "tse",
     )
-    if info.get("underlyingCode"):
+    if info.get("underlyingCode") and (not underlying_quote or quote_reference(underlying_quote) is None):
         underlying_quote = fetch_quote_with_fallback(
             info["underlyingCode"],
             info.get("underlyingMarket") or info.get("warrantMarket") or "tse",
