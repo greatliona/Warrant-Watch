@@ -33,7 +33,7 @@ YUANTA_QUOTE = "https://www.warrantwin.com.tw/eyuanta/ws/Quote.ashx"
 KGI_SERVICE = "https://warrant.kgi.com/EDWebService/WSInterfaceSwap.asmx/GetService"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.6m"
+APP_VERSION = "W1.0.6l"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
@@ -42,22 +42,6 @@ SUPABASE_PROFILE_DEFAULT = "default"
 SUPABASE_HEADERS_BASE = {"User-Agent": "warrant-watch-streamlit/1.0"}
 VENDOR_SSL_VERIFY = False
 VOLATILITY_ALERT_POINTS = 1.0
-MARKET_QUOTE_FIELDS = {
-    "last",
-    "recent",
-    "price",
-    "previousClose",
-    "open",
-    "high",
-    "low",
-    "bestBid",
-    "bestAsk",
-    "mid",
-    "bidSize",
-    "askSize",
-    "date",
-    "time",
-}
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -854,18 +838,6 @@ def quote_reference(quote: dict[str, Any] | None) -> float | None:
     )
 
 
-def market_bid_price(quote: dict[str, Any] | None) -> float | None:
-    if not quote:
-        return None
-    return to_number(quote.get("bestBid"))
-
-
-def latest_trade_price(quote: dict[str, Any] | None) -> float | None:
-    if not quote:
-        return None
-    return first_number(quote.get("last"), quote.get("recent"))
-
-
 def quote_is_blank(value: Any) -> bool:
     if value is None:
         return True
@@ -888,37 +860,6 @@ def merge_quote(primary: dict[str, Any] | None, fallback: dict[str, Any] | None)
         if key == "market" and not quote_is_blank(value):
             merged[key] = value
         elif quote_is_blank(merged.get(key)) and not quote_is_blank(value):
-            merged[key] = value
-    return merged
-
-
-def quote_without_market_prices(quote: dict[str, Any] | None) -> dict[str, Any] | None:
-    if not quote:
-        return None
-    cleaned = dict(quote)
-    for key in MARKET_QUOTE_FIELDS:
-        if key in {"bidSize", "askSize"}:
-            cleaned[key] = []
-        elif key in {"date", "time"}:
-            cleaned[key] = ""
-        else:
-            cleaned[key] = None
-    return cleaned
-
-
-def merge_quote_metadata(
-    market_quote: dict[str, Any] | None,
-    metadata_quote: dict[str, Any] | None,
-) -> dict[str, Any] | None:
-    if not market_quote:
-        return quote_without_market_prices(metadata_quote)
-    if not metadata_quote:
-        return market_quote
-    merged = dict(market_quote)
-    for key, value in metadata_quote.items():
-        if key in MARKET_QUOTE_FIELDS or key == "rawStatus":
-            continue
-        if quote_is_blank(merged.get(key)) and not quote_is_blank(value):
             merged[key] = value
     return merged
 
@@ -1132,7 +1073,6 @@ def load_warrant(code: str, existing: dict[str, Any] | None = None) -> dict[str,
     kgi_underlying: dict[str, Any] | None = None
     yuanta_error = ""
     kgi_error = ""
-    broker_quote = None
     quote = None
 
     issuer = warrant_issuer({"issuer": (existing or {}).get("issuer"), "name": info.get("name")})
@@ -1163,18 +1103,17 @@ def load_warrant(code: str, existing: dict[str, Any] | None = None) -> dict[str,
             yuanta = None
 
     if issuer == "yuanta":
-        broker_quote = quote_from_yuanta(yuanta, normalized, info.get("warrantMarket") or "tse")
+        quote = quote_from_yuanta(yuanta, normalized, info.get("warrantMarket") or "tse")
     elif issuer == "kgi":
-        broker_quote = quote_from_kgi(kgi_warrant, normalized)
+        quote = quote_from_kgi(kgi_warrant, normalized)
     else:
-        broker_quote = None
+        quote = None
 
-    try:
-        market_quote = fetch_quote_with_fallback(normalized, info.get("warrantMarket") or "tse")
-    except Exception as error:
-        exchange_error = exchange_error or str(error)
-        market_quote = None
-    quote = merge_quote_metadata(market_quote, broker_quote)
+    if not quote or quote_reference(quote) is None:
+        try:
+            quote = merge_quote(quote, fetch_quote_with_fallback(normalized, info.get("warrantMarket") or "tse"))
+        except Exception:
+            pass
 
     if not quote:
         details = "；".join(message for message in (yuanta_error, kgi_error, exchange_error) if message)
@@ -1202,20 +1141,15 @@ def load_warrant(code: str, existing: dict[str, Any] | None = None) -> dict[str,
             info["underlyingName"] = underlying.get("Name") or info.get("underlyingName") or ""
             info["underlyingMarket"] = "tse"
 
-    broker_underlying_quote = underlying_quote_from_kgi(kgi_warrant, kgi_underlying) or underlying_quote_from_yuanta(
+    underlying_quote = underlying_quote_from_kgi(kgi_warrant, kgi_underlying) or underlying_quote_from_yuanta(
         yuanta,
         info.get("underlyingMarket") or info.get("warrantMarket") or "tse",
     )
-    market_underlying_quote = None
-    if info.get("underlyingCode"):
-        try:
-            market_underlying_quote = fetch_quote_with_fallback(
-                info["underlyingCode"],
-                info.get("underlyingMarket") or info.get("warrantMarket") or "tse",
-            )
-        except Exception:
-            market_underlying_quote = None
-    underlying_quote = merge_quote_metadata(market_underlying_quote, broker_underlying_quote)
+    if info.get("underlyingCode") and (not underlying_quote or quote_reference(underlying_quote) is None):
+        underlying_quote = fetch_quote_with_fallback(
+            info["underlyingCode"],
+            info.get("underlyingMarket") or info.get("warrantMarket") or "tse",
+        ) or underlying_quote
     if not underlying_quote:
         raise WarrantError("查無標的即時報價")
 
@@ -1228,12 +1162,15 @@ def load_warrant(code: str, existing: dict[str, Any] | None = None) -> dict[str,
             "value": first_number((kgi_warrant or {}).get("MTM_BID_VOL")),
             "source": "凱基委買波動率" if first_number((kgi_warrant or {}).get("MTM_BID_VOL")) else "",
         }
-        underlying_price = latest_trade_price(underlying_quote)
+        underlying_price = first_number(
+            choose_kgi_underlying_price(kgi_warrant, kgi_underlying),
+            quote_reference(underlying_quote),
+        )
         risk_free_rate = 1.5
         history_volatility = to_number((kgi_warrant or {}).get("THREE_MONTH_HISTORY_VOLAILITY"))
     else:
         volatility = yuanta_volatility
-        underlying_price = latest_trade_price(underlying_quote)
+        underlying_price = first_number(choose_underlying_price(yuanta), quote_reference(underlying_quote))
         risk_free_rate = first_number((yuanta or {}).get("FLD_RISK_RATE_FREE"), 1.5)
         history_volatility = to_number((yuanta or {}).get("FLD_HISTORY_VOLATILITY_3M"))
     pricing = {
@@ -1274,8 +1211,8 @@ def load_warrant(code: str, existing: dict[str, Any] | None = None) -> dict[str,
             kgi_error = str(error)
             fair_from_kgi = None
 
-    market_reference = market_bid_price(quote)
-    spot = latest_trade_price(underlying_quote)
+    market_reference = quote.get("bestBid") if quote else None
+    spot = first_number(pricing["underlyingPrice"], quote_reference(underlying_quote))
     item = {
         "id": (existing or {}).get("id") or str(uuid.uuid4()),
         "code": info.get("code") or normalized,
