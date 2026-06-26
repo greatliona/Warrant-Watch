@@ -33,7 +33,7 @@ YUANTA_QUOTE = "https://www.warrantwin.com.tw/eyuanta/ws/Quote.ashx"
 KGI_SERVICE = "https://warrant.kgi.com/EDWebService/WSInterfaceSwap.asmx/GetService"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.6m"
+APP_VERSION = "W1.0.6n"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
@@ -1806,6 +1806,37 @@ def sync_session_version() -> None:
     st.session_state["_loaded_app_version"] = APP_VERSION
 
 
+def sync_shared_underlying_market_quotes(items: list[dict[str, Any]]) -> None:
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for item in items:
+        code = str(item.get("underlyingCode") or "").strip().upper()
+        if code:
+            groups.setdefault(code, []).append(item)
+
+    now = int(time.time() * 1000)
+    for code, group in groups.items():
+        preferred_market = ""
+        for item in group:
+            preferred_market = (
+                (item.get("underlyingQuote") or {}).get("market")
+                or (item.get("quote") or {}).get("market")
+                or preferred_market
+            )
+            if preferred_market:
+                break
+        try:
+            market_quote = fetch_quote_with_fallback(code, preferred_market or "tse")
+        except Exception:
+            market_quote = None
+        if not market_quote:
+            continue
+        spot = latest_trade_price(market_quote)
+        for item in group:
+            item["underlyingQuote"] = merge_quote_metadata(market_quote, item.get("underlyingQuote") or {})
+            item["spot"] = spot
+            item["updatedAt"] = now
+
+
 def add_or_update_warrant(code: str) -> None:
     normalized = str(code or "").strip().upper()
     if not normalized:
@@ -1819,6 +1850,7 @@ def add_or_update_warrant(code: str) -> None:
         st.session_state["items"][existing_index] = item
     else:
         st.session_state["items"].append(item)
+    sync_shared_underlying_market_quotes(st.session_state["items"])
     clear_calculation_inputs()
     persist_current_items()
     st.toast(f"{item['code']} 已儲存")
@@ -1849,6 +1881,7 @@ def refresh_all_prices() -> None:
             progress.progress(completed / len(st.session_state["items"]), text="更新價格中...")
     progress.empty()
     st.session_state["items"] = [item for item in refreshed if item is not None]
+    sync_shared_underlying_market_quotes(st.session_state["items"])
     clear_calculation_inputs()
     persist_current_items()
     st.toast(f"已更新，{failed} 檔暫時抓不到" if failed else "價格已更新")
