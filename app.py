@@ -31,10 +31,11 @@ TPEX_WARRANTS = "https://www.tpex.org.tw/openapi/v1/mopsfin_t187ap37_O"
 YUANTA_WARRANT_DATA = "https://www.warrantwin.com.tw/eyuanta/ws/GetWarData.ashx"
 YUANTA_QUOTE = "https://www.warrantwin.com.tw/eyuanta/ws/Quote.ashx"
 KGI_SERVICE = "https://warrant.kgi.com/EDWebService/WSInterfaceSwap.asmx/GetService"
+FUGLE_INTRADAY_QUOTE = "https://api.fugle.tw/marketdata/v1.0/stock/intraday/quote/{symbol}"
 YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.6s"
+APP_VERSION = "W1.0.7a"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 REALTIME_QUOTE_TTL_SECONDS = 2
 FALLBACK_QUOTE_TTL_SECONDS = 5
@@ -138,6 +139,17 @@ def app_version_text() -> str:
     return f"版本 {APP_VERSION}" + (f" · {commit}" if commit else "")
 
 
+def nested_secret(section: str, *keys: str) -> str:
+    try:
+        values = st.secrets.get(section, {})
+        for key in keys:
+            if key in values:
+                return str(values[key])
+    except Exception:
+        return ""
+    return ""
+
+
 def secret_value(env_key: str, nested_key: str | None = None, default: str = "") -> str:
     value = os.environ.get(env_key)
     if value:
@@ -145,12 +157,22 @@ def secret_value(env_key: str, nested_key: str | None = None, default: str = "")
     try:
         if env_key in st.secrets:
             return str(st.secrets[env_key])
-        supabase = st.secrets.get("supabase", {})
-        if nested_key and nested_key in supabase:
-            return str(supabase[nested_key])
+        if nested_key:
+            nested = nested_secret("supabase", nested_key)
+            if nested:
+                return nested
     except Exception:
         return default
     return default
+
+
+def fugle_api_key() -> str:
+    return (
+        os.environ.get("FUGLE_API_KEY")
+        or nested_secret("fugle", "api_key", "key", "token")
+        or secret_value("FUGLE_API_KEY")
+        or ""
+    ).strip()
 
 
 def supabase_config() -> dict[str, str] | None:
@@ -257,8 +279,10 @@ def fetch_json(
     method: str = "GET",
     data: dict[str, str] | None = None,
     verify: bool = True,
+    headers: dict[str, str] | None = None,
 ) -> Any:
-    response = requests.request(method, url, headers=HEADERS, data=data, timeout=15, verify=verify)
+    request_headers = {**HEADERS, **(headers or {})}
+    response = requests.request(method, url, headers=request_headers, data=data, timeout=15, verify=verify)
     response.raise_for_status()
     return response_json(response, url)
 
@@ -776,6 +800,141 @@ def fetch_quote_with_fallback(code: str, preferred_market: str) -> dict[str, Any
     return None
 
 
+def fetch_warrant_market_quote(code: str, preferred_market: str) -> dict[str, Any] | None:
+    fugle_quote = None
+    try:
+        fugle_quote = fetch_fugle_quote(code, preferred_market)
+    except Exception:
+        fugle_quote = None
+    if fugle_quote and market_bid_price(fugle_quote) is not None:
+        return fugle_quote
+
+    try:
+        mis_quote = fetch_quote_with_fallback(code, preferred_market)
+    except Exception:
+        mis_quote = None
+    if mis_quote and market_bid_price(mis_quote) is not None:
+        return mis_quote
+    return fugle_quote or mis_quote
+
+
+def fugle_market(value: Any, fallback: str) -> str:
+    text = str(value or "").lower()
+    if "tpex" in text or "otc" in text or "roco" in text:
+        return "otc"
+    if "twse" in text or "tse" in text:
+        return "tse"
+    return fallback or "tse"
+
+
+def value_from_path(source: Any, *keys: str) -> Any:
+    value = source
+    for key in keys:
+        if not isinstance(value, dict):
+            return None
+        value = value.get(key)
+    return value
+
+
+def first_mapping_number(source: dict[str, Any], *keys: str) -> float | None:
+    for key in keys:
+        parsed = to_number(source.get(key))
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def book_price(value: Any) -> float | None:
+    if isinstance(value, list):
+        for item in value:
+            parsed = book_price(item)
+            if parsed is not None:
+                return parsed
+    if isinstance(value, dict):
+        return first_mapping_number(value, "price", "bid", "ask")
+    if isinstance(value, (tuple, set)):
+        for item in value:
+            parsed = to_number(item)
+            if parsed is not None:
+                return parsed
+    return to_number(value)
+
+
+def normalize_fugle_quote(raw: dict[str, Any], requested_code: str, preferred_market: str) -> dict[str, Any] | None:
+    data = raw.get("data") if isinstance(raw, dict) else None
+    item = data if isinstance(data, dict) else raw if isinstance(raw, dict) else {}
+    if not item:
+        return None
+
+    trade = item.get("trade") if isinstance(item.get("trade"), dict) else {}
+    last = first_number(
+        item.get("lastPrice"),
+        item.get("last"),
+        item.get("price"),
+        trade.get("price"),
+        item.get("closePrice"),
+    )
+    bids = item.get("bids") or value_from_path(item, "order", "bids") or item.get("bid")
+    asks = item.get("asks") or value_from_path(item, "order", "asks") or item.get("ask")
+    best_bid = first_number(
+        item.get("bestBidPrice"),
+        value_from_path(item, "bestBid", "price"),
+        book_price(bids),
+    )
+    best_ask = first_number(
+        item.get("bestAskPrice"),
+        value_from_path(item, "bestAsk", "price"),
+        book_price(asks),
+    )
+    if last is None and best_bid is None and best_ask is None:
+        return None
+
+    timestamp = (
+        item.get("lastUpdated")
+        or item.get("lastTradeTime")
+        or item.get("lastTime")
+        or trade.get("time")
+        or item.get("time")
+        or item.get("date")
+        or ""
+    )
+    date_text = str(item.get("date") or item.get("tradeDate") or "")[:10].replace("-", "")
+    time_text = str(timestamp or "")
+    return {
+        "market": fugle_market(item.get("exchange") or item.get("market"), preferred_market),
+        "code": str(item.get("symbol") or requested_code),
+        "name": item.get("name") or item.get("shortName") or "",
+        "fullName": item.get("name") or item.get("shortName") or "",
+        "relatedCode": "",
+        "relatedName": "",
+        "date": date_text,
+        "time": time_text,
+        "last": last,
+        "recent": None,
+        "price": last,
+        "previousClose": to_number(item.get("previousClose") or item.get("referencePrice")),
+        "open": to_number(item.get("openPrice")),
+        "high": to_number(item.get("highPrice")),
+        "low": to_number(item.get("lowPrice")),
+        "bestBid": best_bid,
+        "bestAsk": best_ask,
+        "mid": (best_bid + best_ask) / 2 if best_bid is not None and best_ask is not None else None,
+        "bidSize": [],
+        "askSize": [],
+        "rawStatus": "fugle",
+    }
+
+
+@st.cache_data(ttl=REALTIME_QUOTE_TTL_SECONDS, show_spinner=False)
+def fetch_fugle_quote(code: str, preferred_market: str = "tse") -> dict[str, Any] | None:
+    key = fugle_api_key()
+    if not key:
+        return None
+    endpoint = FUGLE_INTRADAY_QUOTE.format(symbol=str(code or "").strip().upper())
+    data = fetch_json(endpoint, headers={"X-API-KEY": key})
+    return normalize_fugle_quote(data, code, preferred_market)
+
+
 def market_candidates(preferred_market: str) -> list[str]:
     preferred = "otc" if preferred_market == "otc" else "tse"
     fallback = "tse" if preferred == "otc" else "otc"
@@ -894,6 +1053,14 @@ def fetch_underlying_market_quote(code: str, preferred_market: str) -> dict[str,
         raise WarrantError(f"{UNDERLYING_QUOTE_ERROR_MARK}：缺標的代號")
 
     errors: list[str] = []
+    try:
+        fugle_quote = fetch_fugle_quote(normalized, preferred_market)
+    except Exception as error:
+        fugle_quote = None
+        errors.append(f"Fugle：{error}")
+    if fugle_quote and realtime_trade_price(fugle_quote) is not None:
+        return fugle_quote
+
     try:
         exchange_quote = fetch_exchange_underlying_quote(normalized, preferred_market)
     except Exception as error:
@@ -1382,7 +1549,7 @@ def load_warrant(code: str, existing: dict[str, Any] | None = None) -> dict[str,
         broker_quote = None
 
     try:
-        market_quote = fetch_quote_with_fallback(normalized, info.get("warrantMarket") or "tse")
+        market_quote = fetch_warrant_market_quote(normalized, info.get("warrantMarket") or "tse")
     except Exception as error:
         exchange_error = exchange_error or str(error)
         market_quote = None
@@ -2004,6 +2171,7 @@ def persist_current_items() -> None:
 
 def clear_realtime_caches() -> None:
     cached_fetches = (
+        fetch_fugle_quote,
         fetch_quote,
         fetch_yahoo_chart,
         fetch_underlying_market_quote,
