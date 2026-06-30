@@ -34,7 +34,7 @@ KGI_SERVICE = "https://warrant.kgi.com/EDWebService/WSInterfaceSwap.asmx/GetServ
 YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.6q"
+APP_VERSION = "W1.0.6r"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 REALTIME_QUOTE_TTL_SECONDS = 2
 FALLBACK_QUOTE_TTL_SECONDS = 5
@@ -324,6 +324,23 @@ def latest_series_number(values: Any) -> float | None:
         if parsed is not None:
             return parsed
     return None
+
+
+def latest_yahoo_trade(close_values: Any, volume_values: Any, timestamps: Any) -> tuple[float | None, float | None]:
+    if not isinstance(close_values, list):
+        return None, None
+    volumes = volume_values if isinstance(volume_values, list) else []
+    times = timestamps if isinstance(timestamps, list) else []
+    for index in range(len(close_values) - 1, -1, -1):
+        close = to_number(close_values[index])
+        if close is None:
+            continue
+        volume = to_number(volumes[index]) if index < len(volumes) else None
+        if volume is not None and volume <= 0:
+            continue
+        timestamp = to_number(times[index]) if index < len(times) else None
+        return close, timestamp
+    return None, None
 
 
 @st.cache_data(ttl=BASIC_DATA_TTL_SECONDS, show_spinner=False)
@@ -799,10 +816,13 @@ def normalize_yahoo_quote(
     indicators = result.get("indicators") or {}
     quote_blocks = indicators.get("quote") or []
     quote_block = quote_blocks[0] if quote_blocks else {}
-    last = first_number(meta.get("regularMarketPrice"), latest_series_number(quote_block.get("close")))
+    last, timestamp = latest_yahoo_trade(
+        quote_block.get("close"),
+        quote_block.get("volume"),
+        result.get("timestamp"),
+    )
     if last is None:
         return None
-    timestamp = first_number(meta.get("regularMarketTime"), latest_series_number(result.get("timestamp")))
     quote_date = ""
     quote_time = ""
     if timestamp is not None:
