@@ -34,7 +34,7 @@ KGI_SERVICE = "https://warrant.kgi.com/EDWebService/WSInterfaceSwap.asmx/GetServ
 YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.6r"
+APP_VERSION = "W1.0.6s"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 REALTIME_QUOTE_TTL_SECONDS = 2
 FALLBACK_QUOTE_TTL_SECONDS = 5
@@ -878,7 +878,7 @@ def fetch_exchange_underlying_quote(code: str, preferred_market: str) -> dict[st
         except Exception as error:
             errors.append(f"{market} MIS {error}")
             quote = None
-        if quote and latest_trade_price(quote) is not None:
+        if quote and realtime_trade_price(quote) is not None:
             quote["rawStatus"] = quote.get("rawStatus") or "twse-mis"
             return quote
         errors.append(f"{market} MIS 無最新成交價")
@@ -1035,6 +1035,26 @@ def latest_trade_price(quote: dict[str, Any] | None) -> float | None:
     if not quote:
         return None
     return first_number(quote.get("last"), quote.get("recent"))
+
+
+def realtime_trade_price(quote: dict[str, Any] | None) -> float | None:
+    if not quote:
+        return None
+    return to_number(quote.get("last"))
+
+
+def quote_is_not_realtime(quote: dict[str, Any] | None) -> bool:
+    return str((quote or {}).get("rawStatus") or "").lower().startswith("yahoo:")
+
+
+def spot_price_from_underlying_quote(quote: dict[str, Any] | None) -> float | None:
+    if quote_is_not_realtime(quote):
+        return latest_trade_price(quote)
+    return realtime_trade_price(quote)
+
+
+def spot_source_note(item: dict[str, Any]) -> str:
+    return "*not real time" if quote_is_not_realtime(item.get("underlyingQuote") or {}) else ""
 
 
 def quote_is_blank(value: Any) -> bool:
@@ -1417,7 +1437,7 @@ def load_warrant(code: str, existing: dict[str, Any] | None = None) -> dict[str,
     else:
         underlying_error = f"{UNDERLYING_QUOTE_ERROR_MARK}：缺標的代號"
     underlying_quote = merge_quote_metadata(market_underlying_quote, broker_underlying_quote)
-    if not market_underlying_quote or latest_trade_price(market_underlying_quote) is None:
+    if not market_underlying_quote or spot_price_from_underlying_quote(market_underlying_quote) is None:
         raise WarrantError(underlying_error or "查無標的最新成交價")
     if not underlying_quote:
         raise WarrantError(underlying_error or "查無標的即時報價")
@@ -1431,12 +1451,12 @@ def load_warrant(code: str, existing: dict[str, Any] | None = None) -> dict[str,
             "value": first_number((kgi_warrant or {}).get("MTM_BID_VOL")),
             "source": "凱基委買波動率" if first_number((kgi_warrant or {}).get("MTM_BID_VOL")) else "",
         }
-        underlying_price = latest_trade_price(underlying_quote)
+        underlying_price = spot_price_from_underlying_quote(underlying_quote)
         risk_free_rate = 1.5
         history_volatility = to_number((kgi_warrant or {}).get("THREE_MONTH_HISTORY_VOLAILITY"))
     else:
         volatility = yuanta_volatility
-        underlying_price = latest_trade_price(underlying_quote)
+        underlying_price = spot_price_from_underlying_quote(underlying_quote)
         risk_free_rate = first_number((yuanta or {}).get("FLD_RISK_RATE_FREE"), 1.5)
         history_volatility = to_number((yuanta or {}).get("FLD_HISTORY_VOLATILITY_3M"))
     pricing = {
@@ -1477,7 +1497,7 @@ def load_warrant(code: str, existing: dict[str, Any] | None = None) -> dict[str,
             kgi_error = str(error)
             fair_from_kgi = None
 
-    spot = latest_trade_price(underlying_quote)
+    spot = spot_price_from_underlying_quote(underlying_quote)
     item = {
         "id": (existing or {}).get("id") or str(uuid.uuid4()),
         "code": info.get("code") or normalized,
@@ -1895,12 +1915,16 @@ def warrant_title_html(item: dict[str, Any]) -> str:
     return f'<div class="warrant-title" title="{html.escape(title)}">{body}</div>'
 
 
-def metric_html(label: str, value: Any, *, accent: bool = False) -> str:
+def metric_html(label: str, value: Any, *, accent: bool = False, note: str = "") -> str:
     cls = "metric-value accent" if accent else "metric-value"
+    note_html = f'<span class="metric-note">{html.escape(note)}</span>' if note else ""
     return (
         '<div class="metric-box">'
         f'<span class="metric-label">{html.escape(label)}</span>'
+        '<span class="metric-value-line">'
         f'<strong class="{cls}">{html.escape(format_number(value))}</strong>'
+        f"{note_html}"
+        "</span>"
         "</div>"
     )
 
@@ -2038,7 +2062,7 @@ def sync_shared_underlying_market_quotes(items: list[dict[str, Any]]) -> None:
                 break
         try:
             market_quote = fetch_underlying_market_quote(code, preferred_market or "tse")
-            spot = latest_trade_price(market_quote)
+            spot = spot_price_from_underlying_quote(market_quote)
             if spot is None:
                 raise WarrantError(f"{UNDERLYING_QUOTE_ERROR_MARK}：{code} 無最新成交價")
         except Exception as error:
@@ -2428,16 +2452,33 @@ def inject_css() -> None:
           font-weight: 850;
           white-space: nowrap;
         }
+        .metric-value-line {
+          display: flex;
+          align-items: baseline;
+          gap: 0.16rem;
+          flex-wrap: wrap;
+          margin-top: 0.12rem;
+          min-width: 0;
+        }
         .metric-value {
           display: block;
           color: var(--ink);
           font-size: 0.96rem;
           line-height: 1.08;
-          margin-top: 0.12rem;
+          margin-top: 0;
           white-space: nowrap;
           font-weight: 850;
         }
         .metric-value.accent { color: var(--green); }
+        .metric-note {
+          display: block;
+          color: var(--faint);
+          font-size: 0.52rem;
+          line-height: 1;
+          margin-top: 0;
+          white-space: nowrap;
+          font-weight: 700;
+        }
         .calc-output {
           min-width: 0;
         }
@@ -3072,7 +3113,7 @@ def render_warrant_card(item: dict[str, Any], index: int) -> None:
                 "</div>"
                 + metric_html("合理價", item.get("fairPrice"), accent=True)
                 + metric_html("報價", item.get("marketReference"))
-                + metric_html("現貨股價", item.get("spot"))
+                + metric_html("現貨股價", item.get("spot"), note=spot_source_note(item))
                 + "</div>",
                 unsafe_allow_html=True,
             )
@@ -3185,7 +3226,7 @@ def render_mobile_warrant_card(item: dict[str, Any], index: int) -> None:
                 '<div class="mobile-metrics">'
                 + metric_html("合理價", item.get("fairPrice"), accent=True)
                 + metric_html("報價", item.get("marketReference"))
-                + metric_html("現貨股價", item.get("spot"))
+                + metric_html("現貨股價", item.get("spot"), note=spot_source_note(item))
                 + "</div>"
                 "</div>",
                 unsafe_allow_html=True,
