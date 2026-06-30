@@ -34,8 +34,11 @@ KGI_SERVICE = "https://warrant.kgi.com/EDWebService/WSInterfaceSwap.asmx/GetServ
 YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.6p"
+APP_VERSION = "W1.0.6q"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
+REALTIME_QUOTE_TTL_SECONDS = 2
+FALLBACK_QUOTE_TTL_SECONDS = 5
+VENDOR_PRICE_TTL_SECONDS = 5
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
 SUPABASE_TABLE_DEFAULT = "warrant_watch_lists"
@@ -338,7 +341,7 @@ def fetch_twse_symbols() -> list[dict[str, Any]]:
     return fetch_json(TWSE_SYMBOLS)
 
 
-@st.cache_data(ttl=15, show_spinner=False)
+@st.cache_data(ttl=VENDOR_PRICE_TTL_SECONDS, show_spinner=False)
 def fetch_yuanta_warrant(code: str) -> dict[str, Any] | None:
     columns = [
         "FLD_WAR_ID",
@@ -394,7 +397,7 @@ def fetch_yuanta_warrant(code: str) -> dict[str, Any] | None:
     return result[0] if result else None
 
 
-@st.cache_data(ttl=15, show_spinner=False)
+@st.cache_data(ttl=VENDOR_PRICE_TTL_SECONDS, show_spinner=False)
 def fetch_yuanta_quote_calc(params: dict[str, str]) -> dict[str, Any] | None:
     endpoint = f"{YUANTA_QUOTE}?{urlencode(params)}"
     data = fetch_json(endpoint, verify=VENDOR_SSL_VERIFY)
@@ -407,7 +410,7 @@ def fetch_yuanta_quote_price(params: dict[str, str]) -> float | None:
     return to_number((calc or {}).get("PriceTheory"))
 
 
-@st.cache_data(ttl=15, show_spinner=False)
+@st.cache_data(ttl=VENDOR_PRICE_TTL_SECONDS, show_spinner=False)
 def fetch_kgi_service(service_id: str, params: dict[str, Any]) -> Any:
     payload = dict(params)
     payload["LocationPathName"] = "/EDWebSite/Views/WarrantCalculator/WarrantCalculatorIframe.aspx"
@@ -732,7 +735,7 @@ def apply_kgi_overrides(info: dict[str, Any], kgi: dict[str, Any] | None) -> Non
     info["exerciseEndDate"] = compact_date_to_iso(kgi.get("INSWRT_EXPIRED_DATE")) or info.get("exerciseEndDate") or ""
 
 
-@st.cache_data(ttl=5, show_spinner=False)
+@st.cache_data(ttl=REALTIME_QUOTE_TTL_SECONDS, show_spinner=False)
 def fetch_quote(market: str, code: str) -> dict[str, Any] | None:
     params = {
         "ex_ch": f"{market}_{code}.tw",
@@ -768,7 +771,7 @@ def yahoo_symbols(code: str, preferred_market: str) -> list[tuple[str, str]]:
     return [(f"{code}.{suffixes[market]}", market) for market in markets]
 
 
-@st.cache_data(ttl=15, show_spinner=False)
+@st.cache_data(ttl=FALLBACK_QUOTE_TTL_SECONDS, show_spinner=False)
 def fetch_yahoo_chart(symbol: str) -> dict[str, Any]:
     endpoint = YAHOO_CHART.format(symbol=symbol)
     params = {"range": "1d", "interval": "1m"}
@@ -864,7 +867,7 @@ def fetch_exchange_underlying_quote(code: str, preferred_market: str) -> dict[st
     return None
 
 
-@st.cache_data(ttl=15, show_spinner=False)
+@st.cache_data(ttl=FALLBACK_QUOTE_TTL_SECONDS, show_spinner=False)
 def fetch_underlying_market_quote(code: str, preferred_market: str) -> dict[str, Any]:
     normalized = str(code or "").strip().upper()
     if not normalized:
@@ -1961,6 +1964,7 @@ def clear_realtime_caches() -> None:
         fetch_yahoo_chart,
         fetch_underlying_market_quote,
         fetch_yuanta_warrant,
+        fetch_yuanta_quote_calc,
         fetch_yuanta_quote_price,
         fetch_kgi_service,
     )
