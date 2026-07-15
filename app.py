@@ -35,7 +35,7 @@ FUGLE_INTRADAY_QUOTE = "https://api.fugle.tw/marketdata/v1.0/stock/intraday/quot
 YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.7a"
+APP_VERSION = "W1.0.7b"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 REALTIME_QUOTE_TTL_SECONDS = 2
 FALLBACK_QUOTE_TTL_SECONDS = 5
@@ -567,23 +567,16 @@ def fetch_kgi_price_for_item(item: dict[str, Any], spot: Any) -> float | None:
     return fetch_kgi_theoretical_price(params)
 
 
-def choose_volatility(row: dict[str, Any] | None) -> dict[str, Any]:
+def choose_yuanta_bid_volatility(row: dict[str, Any] | None) -> dict[str, Any]:
     if not row:
         return {"value": None, "source": ""}
     yuanta_iv = to_number(row.get("FLD_YUANTA_IV"))
     if row.get("FLD_ISSUE_AGT_ID") == "980" and yuanta_iv and yuanta_iv > 0:
         return {"value": yuanta_iv, "source": "元大造市委買波動率"}
 
-    candidates = [
-        ("買價隱波", row.get("FLD_IV_BUY_PRICE")),
-        ("賣價隱波", row.get("FLD_IV_SELL_PRICE")),
-        ("收盤隱波", row.get("FLD_IV_CLOSE_PRICE")),
-        ("三個月歷史波動率", row.get("FLD_HISTORY_VOLATILITY_3M")),
-    ]
-    for source, raw_value in candidates:
-        value = to_number(raw_value)
-        if value and value > 0:
-            return {"value": value, "source": source}
+    bid_iv = to_number(row.get("FLD_IV_BUY_PRICE"))
+    if bid_iv and bid_iv > 0:
+        return {"value": bid_iv, "source": "元大委買隱波"}
     return {"value": None, "source": ""}
 
 
@@ -1082,7 +1075,7 @@ def fetch_underlying_market_quote(code: str, preferred_market: str) -> dict[str,
 
 
 def build_yuanta_calc_params(info: dict[str, Any], yuanta: dict[str, Any] | None, spot: Any) -> dict[str, str] | None:
-    volatility = choose_volatility(yuanta)
+    volatility = choose_yuanta_bid_volatility(yuanta)
     spot_value = to_number(spot)
     vol_value = to_number(volatility.get("value"))
     if not yuanta or not spot_value or not vol_value:
@@ -1612,7 +1605,7 @@ def load_warrant(code: str, existing: dict[str, Any] | None = None) -> dict[str,
     info["underlyingMarket"] = underlying_quote.get("market") or info.get("underlyingMarket")
     info["underlyingName"] = info.get("underlyingName") or underlying_quote.get("name") or ""
 
-    yuanta_volatility = choose_volatility(yuanta)
+    yuanta_volatility = choose_yuanta_bid_volatility(yuanta)
     if issuer == "kgi":
         volatility = {
             "value": first_number((kgi_warrant or {}).get("MTM_BID_VOL")),
@@ -1680,8 +1673,8 @@ def load_warrant(code: str, existing: dict[str, Any] | None = None) -> dict[str,
         "underlyingQuote": underlying_quote,
         "spot": spot,
         "marketReference": market_reference,
-        "volatility": (first_number(pricing["volatility"], 45) or 45) / 100,
-        "volatilitySource": pricing.get("volatilitySource") or "波動率",
+        "volatility": (pricing["volatility"] / 100) if pricing.get("volatility") is not None else None,
+        "volatilitySource": pricing.get("volatilitySource") or "委買隱波",
         "historyVolatility": (pricing.get("historyVolatility") / 100) if pricing.get("historyVolatility") else None,
         "riskFreeRate": (first_number(pricing["riskFreeRate"], 1.5) or 1.5) / 100,
         "evaluationDate": pricing.get("evaluationDate") or "",
@@ -1892,7 +1885,7 @@ def format_volatility_change(value: Any) -> str:
     if parsed is None:
         return "--"
     sign = "+" if parsed > 0 else ""
-    return f"{sign}{parsed:.2f}pt"
+    return f"{sign}{parsed:.2f}%"
 
 
 def normalize_volatility_history(value: Any) -> list[dict[str, Any]]:
@@ -1966,6 +1959,8 @@ def apply_volatility_tracking(item: dict[str, Any], existing: dict[str, Any] | N
     existing = existing or {}
     current_volatility = to_number(item.get("volatility"))
     previous_volatility = to_number(existing.get("volatility"))
+    current_source = str(item.get("volatilitySource") or "")
+    previous_source = str(existing.get("volatilitySource") or "")
     previous_alerted = bool(existing.get("volatilityAlerted"))
     history = migrate_legacy_volatility_history(
         existing,
@@ -1984,6 +1979,13 @@ def apply_volatility_tracking(item: dict[str, Any], existing: dict[str, Any] | N
     item["volatilityFirstAlertAt"] = existing.get("volatilityFirstAlertAt") or ""
     item["volatilityLastAlertAt"] = existing.get("volatilityLastAlertAt") or ""
     item["volatilityLastCheckAt"] = now
+
+    if previous_source and current_source and previous_source != current_source:
+        item["volatilityAlerted"] = False
+        item["previousVolatility"] = current_volatility
+        item["volatilityChangePoints"] = 0
+        item["volatilityDirection"] = "flat"
+        return item
 
     baseline_volatility = last_recorded_volatility
     if baseline_volatility is None:
@@ -2038,6 +2040,12 @@ def volatility_history_detail_text(entry: dict[str, Any]) -> str:
     change = format_volatility_change(entry.get("changePoints"))
     changed_at = format_tracking_time(entry.get("changedAt"))
     return f"{changed_at} {previous} -> {current} ({change})"
+
+
+def volatility_detail_text(item: dict[str, Any]) -> str:
+    source = item.get("volatilitySource") or "委買隱波"
+    value = to_number(item.get("volatility"))
+    return f"{source} {format_percent_points(value)}"
 
 
 def time_ago(timestamp: Any) -> str:
@@ -2148,7 +2156,7 @@ def detail_html(item: dict[str, Any]) -> str:
         ("到期日", item.get("expiry") or "--"),
         ("評價日", item.get("evaluationDate") or "--"),
         ("合理價來源", item.get("fairPriceSource") or "--"),
-        ("波動率", f"{item.get('volatilitySource') or '波動率'} {format_number((to_number(item.get('volatility')) or 0) * 100)}%"),
+        ("委買隱波", volatility_detail_text(item)),
         ("隱波追蹤", volatility_tracking_text(item)),
         ("利率", f"{format_number((to_number(item.get('riskFreeRate')) or 0) * 100)}%"),
         ("委買/委賣", f"{format_number(quote.get('bestBid'))} / {format_number(quote.get('bestAsk'))}"),
@@ -3478,7 +3486,7 @@ def render_details(item: dict[str, Any]) -> None:
     detail_line("到期日", item.get("expiry") or "--")
     detail_line("評價日", item.get("evaluationDate") or "--")
     detail_line("合理價來源", item.get("fairPriceSource") or "--")
-    detail_line("波動率", f"{item.get('volatilitySource') or '波動率'} {format_number((to_number(item.get('volatility')) or 0) * 100)}%")
+    detail_line("委買隱波", volatility_detail_text(item))
     detail_line("利率", f"{format_number((to_number(item.get('riskFreeRate')) or 0) * 100)}%")
     detail_line("委買/委賣", f"{format_number(quote.get('bestBid'))} / {format_number(quote.get('bestAsk'))}")
     detail_line("標的市場", f"{underlying_quote.get('market') or '--'}")
