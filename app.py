@@ -35,7 +35,7 @@ FUGLE_INTRADAY_QUOTE = "https://api.fugle.tw/marketdata/v1.0/stock/intraday/quot
 YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.7b"
+APP_VERSION = "W1.0.7c"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 REALTIME_QUOTE_TTL_SECONDS = 2
 FALLBACK_QUOTE_TTL_SECONDS = 5
@@ -399,11 +399,8 @@ def fetch_yuanta_warrant(code: str) -> dict[str, Any] | None:
         "FLD_DUR_END",
         "FLD_N_STRIKE_PRC",
         "FLD_N_UND_CONVER",
-        "FLD_IV_BUY_PRICE",
-        "FLD_IV_SELL_PRICE",
         "FLD_HISTORY_VOLATILITY_3M",
         "FLD_RISK_RATE_FREE",
-        "FLD_IV_CLOSE_PRICE",
         "FLD_OBJ_BUY_PRICE",
         "FLD_OBJ_2BUY_PRICE",
         "FLD_OBJ_SELL_PRICE",
@@ -573,10 +570,6 @@ def choose_yuanta_bid_volatility(row: dict[str, Any] | None) -> dict[str, Any]:
     yuanta_iv = to_number(row.get("FLD_YUANTA_IV"))
     if row.get("FLD_ISSUE_AGT_ID") == "980" and yuanta_iv and yuanta_iv > 0:
         return {"value": yuanta_iv, "source": "元大造市委買波動率"}
-
-    bid_iv = to_number(row.get("FLD_IV_BUY_PRICE"))
-    if bid_iv and bid_iv > 0:
-        return {"value": bid_iv, "source": "元大委買隱波"}
     return {"value": None, "source": ""}
 
 
