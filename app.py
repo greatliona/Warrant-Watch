@@ -35,7 +35,7 @@ FUGLE_INTRADAY_QUOTE = "https://api.fugle.tw/marketdata/v1.0/stock/intraday/quot
 YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.7f"
+APP_VERSION = "W1.0.7g"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 REALTIME_QUOTE_TTL_SECONDS = 2
 FALLBACK_QUOTE_TTL_SECONDS = 5
@@ -2317,9 +2317,9 @@ def add_or_update_warrant(code: str) -> None:
     st.toast(f"{item['code']} 已儲存")
 
 
-def refresh_all_prices() -> None:
+def refresh_all_prices() -> int:
     if not st.session_state["items"]:
-        return
+        return 0
     clear_realtime_caches()
     refreshed: list[dict[str, Any] | None] = [None] * len(st.session_state["items"])
     failed = 0
@@ -2350,6 +2350,7 @@ def refresh_all_prices() -> None:
     clear_calculation_inputs()
     persist_current_items()
     st.toast(f"已更新，{failed} 檔暫時抓不到" if failed else "價格已更新")
+    return failed
 
 
 def move_item(index: int, direction: int) -> None:
@@ -3589,6 +3590,9 @@ def render_main() -> None:
 
 def render_mobile_controls() -> None:
     with st.container(key="mobile_controls"):
+        mobile_notice = st.session_state.pop("_mobile_refresh_notice", "")
+        if mobile_notice:
+            st.toast(mobile_notice)
         st.markdown(
             f'<div style="text-align: center; margin-bottom: 0.6rem; line-height: 1.4; word-wrap: break-word; white-space: normal;">'
             f'<span style="color: var(--muted); font-size: 0.76rem;">已儲存 <strong style="color: var(--ink);">{len(st.session_state["items"])}</strong> 檔</span><br>'
@@ -3612,7 +3616,10 @@ def render_mobile_controls() -> None:
         with btn_cols[1]:
             if st.button("更新價格", use_container_width=True, disabled=not st.session_state["items"], key="mobile_refresh_prices"):
                 try:
-                    refresh_all_prices()
+                    with st.spinner("更新價格中，請等這行消失..."):
+                        failed = refresh_all_prices()
+                    st.session_state["_mobile_refresh_notice"] = f"已更新，{failed} 檔暫時抓不到" if failed else "價格已更新"
+                    st.rerun()
                 except Exception as error:
                     st.error(str(error))
             with st.container(key="mobile_backup_controls"):
