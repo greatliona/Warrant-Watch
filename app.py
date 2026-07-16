@@ -35,7 +35,7 @@ FUGLE_INTRADAY_QUOTE = "https://api.fugle.tw/marketdata/v1.0/stock/intraday/quot
 YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.7e"
+APP_VERSION = "W1.0.7f"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 REALTIME_QUOTE_TTL_SECONDS = 2
 FALLBACK_QUOTE_TTL_SECONDS = 5
@@ -1639,7 +1639,7 @@ def load_warrant(code: str, existing: dict[str, Any] | None = None) -> dict[str,
     fair_from_yuanta = None
     if issuer == "yuanta":
         try:
-            fair_from_yuanta = fetch_yuanta_quote_price(yuanta_calc_params) if yuanta_calc_params else None
+            fair_from_yuanta = valid_price(fetch_yuanta_quote_price(yuanta_calc_params)) if yuanta_calc_params else None
         except Exception as error:
             yuanta_error = str(error)
     kgi_calc_params: dict[str, Any] = {}
@@ -1647,7 +1647,7 @@ def load_warrant(code: str, existing: dict[str, Any] | None = None) -> dict[str,
     if issuer == "kgi":
         try:
             kgi_calc_params = build_kgi_calc_params_from_warrant(kgi_warrant or {}, underlying_price) or {}
-            fair_from_kgi = fetch_kgi_theoretical_price(kgi_calc_params)
+            fair_from_kgi = valid_price(fetch_kgi_theoretical_price(kgi_calc_params))
         except Exception as error:
             kgi_error = str(error)
             fair_from_kgi = None
@@ -1716,9 +1716,9 @@ def fair_price_for_spot(item: dict[str, Any], spot: Any) -> float | None:
         return None
     issuer = warrant_issuer(item)
     if issuer == "yuanta":
-        return fetch_yuanta_price_for_item(item, spot_value)
+        return valid_price(fetch_yuanta_price_for_item(item, spot_value))
     if issuer == "kgi":
-        return fetch_kgi_price_for_item(item, spot_value)
+        return valid_price(fetch_kgi_price_for_item(item, spot_value))
     return None
 
 
@@ -1840,6 +1840,20 @@ def format_number(value: Any, digits: int = 2) -> str:
     if parsed is None:
         return "--"
     return f"{parsed:,.{digits}f}"
+
+
+def format_metric_number(value: Any, digits: int = 2, *, missing: str = "--") -> str:
+    parsed = to_number(value)
+    if parsed is None:
+        return missing
+    return f"{parsed:,.{digits}f}"
+
+
+def valid_price(value: Any) -> float | None:
+    parsed = to_number(value)
+    if parsed is None or parsed <= 0:
+        return None
+    return parsed
 
 
 def format_input_number(value: Any, digits: int = 2) -> str:
@@ -2085,14 +2099,14 @@ def warrant_title_html(item: dict[str, Any]) -> str:
     return f'<div class="warrant-title" title="{html.escape(title)}">{body}</div>'
 
 
-def metric_html(label: str, value: Any, *, accent: bool = False, note: str = "") -> str:
+def metric_html(label: str, value: Any, *, accent: bool = False, note: str = "", missing: str = "--") -> str:
     cls = "metric-value accent" if accent else "metric-value"
     note_html = f'<span class="metric-note">{html.escape(note)}</span>' if note else ""
     return (
         '<div class="metric-box">'
         f'<span class="metric-label">{html.escape(label)}</span>'
         '<span class="metric-value-line">'
-        f'<strong class="{cls}">{html.escape(format_number(value))}</strong>'
+        f'<strong class="{cls}">{html.escape(format_metric_number(value, missing=missing))}</strong>'
         f"{note_html}"
         "</span>"
         "</div>"
@@ -3095,11 +3109,35 @@ def inject_css() -> None:
           .mobile-metrics .metric-value {
             text-align: center;
           }
+          .mobile-metrics .metric-box {
+            display: grid;
+            grid-template-rows: 0.78rem minmax(1.34rem, auto);
+            align-items: start;
+            justify-items: center;
+          }
           .mobile-metrics .metric-label {
             font-size: 0.64rem;
+            width: 100%;
+            line-height: 0.78rem;
+          }
+          .mobile-metrics .metric-value-line {
+            display: flex;
+            width: 100%;
+            min-height: 1.34rem;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 0.06rem;
+            margin-top: 0.08rem;
           }
           .mobile-metrics .metric-value {
             font-size: 0.86rem;
+            line-height: 1;
+          }
+          .mobile-metrics .metric-note {
+            font-size: 0.48rem;
+            line-height: 0.72rem;
+            margin-top: 0;
           }
           div[class*="st-key-mobile_calc_row_"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] {
             display: grid !important;
@@ -3314,7 +3352,7 @@ def render_warrant_card(item: dict[str, Any], index: int) -> None:
                 f"{warrant_title_html(item)}"
                 f"{detail_html(item)}"
                 "</div>"
-                + metric_html("合理價", item.get("fairPrice"), accent=True)
+                + metric_html("合理價", valid_price(item.get("fairPrice")), accent=True, missing="---")
                 + metric_html("報價", item.get("marketReference"))
                 + metric_html("現貨股價", item.get("spot"), note=spot_source_note(item))
                 + "</div>",
@@ -3341,7 +3379,7 @@ def render_warrant_card(item: dict[str, Any], index: int) -> None:
                         if numbers_equal(test_spot, item.get("testSpot")) and to_number(item.get("simulatedPrice")) is not None:
                             simulated = item.get("simulatedPrice")
                         elif numbers_equal(test_spot, item.get("spot")):
-                            simulated = item.get("fairPrice")
+                            simulated = valid_price(item.get("fairPrice"))
                             changed = True
                         else:
                             simulated = fair_price_for_spot(item, test_spot)
@@ -3427,7 +3465,7 @@ def render_mobile_warrant_card(item: dict[str, Any], index: int) -> None:
                 f"{detail_html(item)}"
                 "</div>"
                 '<div class="mobile-metrics">'
-                + metric_html("合理價", item.get("fairPrice"), accent=True)
+                + metric_html("合理價", valid_price(item.get("fairPrice")), accent=True, missing="---")
                 + metric_html("報價", item.get("marketReference"))
                 + metric_html("現貨股價", item.get("spot"), note=spot_source_note(item))
                 + "</div>"
@@ -3456,7 +3494,7 @@ def render_mobile_warrant_card(item: dict[str, Any], index: int) -> None:
                             if numbers_equal(test_spot, item.get("testSpot")) and to_number(item.get("simulatedPrice")) is not None:
                                 simulated = item.get("simulatedPrice")
                             elif numbers_equal(test_spot, item.get("spot")):
-                                simulated = item.get("fairPrice")
+                                simulated = valid_price(item.get("fairPrice"))
                                 changed = True
                             else:
                                 simulated = fair_price_for_spot(item, test_spot)
