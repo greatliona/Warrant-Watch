@@ -35,11 +35,13 @@ FUGLE_INTRADAY_QUOTE = "https://api.fugle.tw/marketdata/v1.0/stock/intraday/quot
 YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.7c"
+APP_VERSION = "W1.0.7e"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 REALTIME_QUOTE_TTL_SECONDS = 2
 FALLBACK_QUOTE_TTL_SECONDS = 5
 VENDOR_PRICE_TTL_SECONDS = 5
+HTTP_TIMEOUT_SECONDS = 8
+SUPABASE_TIMEOUT_SECONDS = 8
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
 SUPABASE_TABLE_DEFAULT = "warrant_watch_lists"
@@ -234,7 +236,7 @@ def read_supabase_items() -> list[dict[str, Any]]:
             "select": "items",
             "limit": "1",
         },
-        timeout=12,
+        timeout=SUPABASE_TIMEOUT_SECONDS,
     )
     response.raise_for_status()
     rows = response_json(response, "Supabase 清單")
@@ -258,7 +260,7 @@ def write_supabase_items(items: list[dict[str, Any]]) -> bool:
         headers=supabase_headers(config, prefer="resolution=merge-duplicates,return=minimal"),
         params={"on_conflict": "profile_id"},
         json=payload,
-        timeout=12,
+        timeout=SUPABASE_TIMEOUT_SECONDS,
     )
     response.raise_for_status()
     return True
@@ -282,7 +284,7 @@ def fetch_json(
     headers: dict[str, str] | None = None,
 ) -> Any:
     request_headers = {**HEADERS, **(headers or {})}
-    response = requests.request(method, url, headers=request_headers, data=data, timeout=15, verify=verify)
+    response = requests.request(method, url, headers=request_headers, data=data, timeout=HTTP_TIMEOUT_SECONDS, verify=verify)
     response.raise_for_status()
     return response_json(response, url)
 
@@ -426,7 +428,7 @@ def fetch_yuanta_warrant(code: str) -> dict[str, Any] | None:
         YUANTA_WARRANT_DATA,
         headers=headers,
         data={"data": json.dumps(payload, ensure_ascii=False)},
-        timeout=15,
+        timeout=HTTP_TIMEOUT_SECONDS,
         verify=VENDOR_SSL_VERIFY,
     )
     response.raise_for_status()
@@ -463,7 +465,7 @@ def fetch_kgi_service(service_id: str, params: dict[str, Any]) -> Any:
             "serviceId": service_id,
             "parametersOfJson": json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
         },
-        timeout=15,
+        timeout=HTTP_TIMEOUT_SECONDS,
         verify=VENDOR_SSL_VERIFY,
     )
     response.raise_for_status()
@@ -568,7 +570,7 @@ def choose_yuanta_bid_volatility(row: dict[str, Any] | None) -> dict[str, Any]:
     if not row:
         return {"value": None, "source": ""}
     yuanta_iv = to_number(row.get("FLD_YUANTA_IV"))
-    if row.get("FLD_ISSUE_AGT_ID") == "980" and yuanta_iv and yuanta_iv > 0:
+    if yuanta_iv and yuanta_iv > 0:
         return {"value": yuanta_iv, "source": "元大造市委買波動率"}
     return {"value": None, "source": ""}
 
@@ -2188,6 +2190,20 @@ def clear_realtime_caches() -> None:
             pass
 
 
+def clear_market_quote_caches() -> None:
+    cached_fetches = (
+        fetch_fugle_quote,
+        fetch_quote,
+        fetch_yahoo_chart,
+        fetch_underlying_market_quote,
+    )
+    for cached_fetch in cached_fetches:
+        try:
+            cached_fetch.clear()
+        except Exception:
+            pass
+
+
 def clear_calculation_inputs() -> None:
     prefixes = ("spot_text_", "target_text_", "mobile_spot_text_", "mobile_target_text_")
     for key in list(st.session_state.keys()):
@@ -2250,6 +2266,22 @@ def sync_shared_underlying_market_quotes(items: list[dict[str, Any]]) -> None:
             item["updatedAt"] = now
 
 
+def sync_shared_underlying_from_item(items: list[dict[str, Any]], source: dict[str, Any]) -> None:
+    code = str(source.get("underlyingCode") or "").strip().upper()
+    quote = source.get("underlyingQuote") or {}
+    spot = spot_price_from_underlying_quote(quote)
+    if not code or spot is None:
+        return
+    now = int(time.time() * 1000)
+    for item in items:
+        if str(item.get("underlyingCode") or "").strip().upper() != code:
+            continue
+        item["underlyingQuote"] = merge_quote_metadata(quote, item.get("underlyingQuote") or {})
+        item["spot"] = spot
+        clear_underlying_quote_error(item)
+        item["updatedAt"] = now
+
+
 def add_or_update_warrant(code: str) -> None:
     normalized = str(code or "").strip().upper()
     if not normalized:
@@ -2257,15 +2289,17 @@ def add_or_update_warrant(code: str) -> None:
         return
     existing_index = next((i for i, item in enumerate(st.session_state["items"]) if item.get("code") == normalized), -1)
     existing = st.session_state["items"][existing_index] if existing_index >= 0 else None
+    clear_market_quote_caches()
     with st.spinner("正在抓取權證資料..."):
         item = load_warrant(normalized, existing)
     if existing_index >= 0:
         st.session_state["items"][existing_index] = item
     else:
         st.session_state["items"].append(item)
-    sync_shared_underlying_market_quotes(st.session_state["items"])
+    sync_shared_underlying_from_item(st.session_state["items"], item)
     clear_calculation_inputs()
-    persist_current_items()
+    with st.spinner("正在儲存清單..."):
+        persist_current_items()
     st.toast(f"{item['code']} 已儲存")
 
 
