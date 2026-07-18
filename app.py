@@ -35,7 +35,7 @@ FUGLE_INTRADAY_QUOTE = "https://api.fugle.tw/marketdata/v1.0/stock/intraday/quot
 YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.7g"
+APP_VERSION = "W1.0.7h"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 REALTIME_QUOTE_TTL_SECONDS = 2
 FALLBACK_QUOTE_TTL_SECONDS = 5
@@ -2184,6 +2184,7 @@ def detail_html(item: dict[str, Any]) -> str:
 
 def persist_current_items() -> None:
     write_cloud_items(st.session_state["items"])
+    st.session_state["_pending_order_sync"] = False
 
 
 def clear_realtime_caches() -> None:
@@ -2359,7 +2360,7 @@ def move_item(index: int, direction: int) -> None:
         return
     item = st.session_state["items"].pop(index)
     st.session_state["items"].insert(next_index, item)
-    persist_current_items()
+    st.session_state["_pending_order_sync"] = True
     st.rerun()
 
 
