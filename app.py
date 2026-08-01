@@ -35,13 +35,13 @@ FUGLE_INTRADAY_QUOTE = "https://api.fugle.tw/marketdata/v1.0/stock/intraday/quot
 YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.7h"
+APP_VERSION = "W1.0.7i"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 REALTIME_QUOTE_TTL_SECONDS = 2
 FALLBACK_QUOTE_TTL_SECONDS = 5
 VENDOR_PRICE_TTL_SECONDS = 5
-HTTP_TIMEOUT_SECONDS = 8
-SUPABASE_TIMEOUT_SECONDS = 8
+HTTP_TIMEOUT_SECONDS = 5
+SUPABASE_TIMEOUT_SECONDS = 5
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
 SUPABASE_TABLE_DEFAULT = "warrant_watch_lists"
@@ -628,11 +628,17 @@ def find_underlying(name_or_code: str) -> dict[str, Any] | None:
 
 def find_warrant_info(code: str) -> dict[str, Any] | None:
     code = code.strip().upper()
-    row = next((item for item in fetch_twse_warrants() if str(item.get("權證代號") or "").upper() == code), None)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        twse_future = executor.submit(fetch_twse_warrants)
+        tpex_future = executor.submit(fetch_tpex_warrants)
+        twse_rows = twse_future.result()
+        tpex_rows = tpex_future.result()
+
+    row = next((item for item in twse_rows if str(item.get("權證代號") or "").upper() == code), None)
     market = "tse"
 
     if not row:
-        row = next((item for item in fetch_tpex_warrants() if str(item.get("權證代號") or "").upper() == code), None)
+        row = next((item for item in tpex_rows if str(item.get("權證代號") or "").upper() == code), None)
         market = "otc" if row else "tse"
 
     if not row:
@@ -778,13 +784,15 @@ def fetch_quote(market: str, code: str) -> dict[str, Any] | None:
 
 def fetch_quote_with_fallback(code: str, preferred_market: str) -> dict[str, Any] | None:
     markets = ["tse", "otc"] if preferred_market == "tse" else ["otc", "tse"]
-    for market in markets:
-        try:
-            quote = fetch_quote(market, code)
-        except Exception:
-            quote = None
-        if quote:
-            return quote
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = {market: executor.submit(fetch_quote, market, code) for market in markets}
+        for market in markets:
+            try:
+                quote = futures[market].result()
+            except Exception:
+                quote = None
+            if quote:
+                return quote
     return None
 
 
@@ -1003,9 +1011,20 @@ def normalize_yahoo_quote(
 
 def fetch_yahoo_underlying_quote(code: str, preferred_market: str) -> dict[str, Any] | None:
     errors: list[str] = []
-    for symbol, market in yahoo_symbols(code, preferred_market):
+    candidates = yahoo_symbols(code, preferred_market)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = {symbol: executor.submit(fetch_yahoo_chart, symbol) for symbol, _ in candidates}
+        results = []
+        for symbol, market in candidates:
+            try:
+                results.append((symbol, market, futures[symbol].result(), None))
+            except Exception as error:
+                results.append((symbol, market, None, error))
+    for symbol, market, raw, fetch_error in results:
         try:
-            quote = normalize_yahoo_quote(fetch_yahoo_chart(symbol), code, market, symbol)
+            if fetch_error:
+                raise fetch_error
+            quote = normalize_yahoo_quote(raw, code, market, symbol)
         except Exception as error:
             errors.append(str(error))
             quote = None
@@ -1019,9 +1038,19 @@ def fetch_yahoo_underlying_quote(code: str, preferred_market: str) -> dict[str, 
 
 def fetch_exchange_underlying_quote(code: str, preferred_market: str) -> dict[str, Any] | None:
     errors: list[str] = []
-    for market in market_candidates(preferred_market):
+    markets = market_candidates(preferred_market)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = {market: executor.submit(fetch_quote, market, code) for market in markets}
+        results = []
+        for market in markets:
+            try:
+                results.append((market, futures[market].result(), None))
+            except Exception as error:
+                results.append((market, None, error))
+    for market, quote, fetch_error in results:
         try:
-            quote = fetch_quote(market, code)
+            if fetch_error:
+                raise fetch_error
         except Exception as error:
             errors.append(f"{market} MIS {error}")
             quote = None
@@ -1472,15 +1501,28 @@ def load_warrant(code: str, existing: dict[str, Any] | None = None) -> dict[str,
         raise WarrantError("請輸入權證代號，不是股票代號；例如 068562")
 
     exchange_error = ""
+    market_quote = None
     existing_info = info_from_existing_item(normalized, existing)
     if existing_info:
         info = existing_info
-    else:
         try:
-            exchange_info = find_warrant_info(normalized)
+            market_quote = fetch_warrant_market_quote(normalized, info.get("warrantMarket") or "tse")
         except Exception as error:
             exchange_error = str(error)
-            exchange_info = None
+    else:
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            info_future = executor.submit(find_warrant_info, normalized)
+            market_future = executor.submit(fetch_warrant_market_quote, normalized, "tse")
+            try:
+                exchange_info = info_future.result()
+            except Exception as error:
+                exchange_error = str(error)
+                exchange_info = None
+            try:
+                market_quote = market_future.result()
+            except Exception as error:
+                exchange_error = exchange_error or str(error)
+                market_quote = None
         info = exchange_info or {
             "code": normalized,
             "name": "",
@@ -1496,30 +1538,63 @@ def load_warrant(code: str, existing: dict[str, Any] | None = None) -> dict[str,
         }
     yuanta: dict[str, Any] | None = None
     kgi_warrant: dict[str, Any] | None = None
-    kgi_underlying: dict[str, Any] | None = None
     yuanta_error = ""
     kgi_error = ""
     broker_quote = None
     quote = None
+    market_underlying_quote = None
+    underlying_error = ""
 
-    issuer = warrant_issuer({"issuer": (existing or {}).get("issuer"), "name": info.get("name")})
-    if issuer == "kgi" or not issuer:
+    issuer = warrant_issuer(
+        {
+            "issuer": (existing or {}).get("issuer"),
+            "name": info.get("name") or (market_quote or {}).get("name") or (market_quote or {}).get("fullName"),
+        }
+    )
+    broker_workers = 1 + int(bool(info.get("underlyingCode"))) + int(not issuer)
+    with ThreadPoolExecutor(max_workers=broker_workers) as executor:
+        kgi_future = executor.submit(fetch_kgi_warrant, normalized) if issuer in {"", "kgi"} else None
+        yuanta_future = executor.submit(fetch_yuanta_warrant, normalized) if issuer in {"", "yuanta"} else None
+        spot_future = None
+        if info.get("underlyingCode"):
+            spot_future = executor.submit(
+                fetch_underlying_market_quote,
+                info["underlyingCode"],
+                info.get("underlyingMarket") or info.get("warrantMarket") or "tse",
+            )
+
+        if kgi_future:
+            try:
+                kgi_warrant = kgi_future.result()
+            except Exception as error:
+                kgi_error = str(error)
+                kgi_warrant = None
+        if yuanta_future:
+            try:
+                yuanta = yuanta_future.result()
+            except Exception as error:
+                yuanta_error = str(error)
+                yuanta = None
+        if spot_future:
+            try:
+                market_underlying_quote = spot_future.result()
+            except Exception as error:
+                underlying_error = str(error)
+                market_underlying_quote = None
+
+    if issuer == "kgi" or (not issuer and kgi_warrant):
         try:
-            kgi_warrant = fetch_kgi_warrant(normalized)
             if kgi_warrant:
                 issuer = "kgi"
                 apply_kgi_overrides(info, kgi_warrant)
-                kgi_underlying = fetch_kgi_underlying_by_warrant(kgi_warrant)
             elif issuer == "kgi":
                 kgi_error = "凱基資料讀不到這檔權證"
         except Exception as error:
             kgi_error = str(error)
             kgi_warrant = None
-            kgi_underlying = None
 
     if issuer == "yuanta" or not issuer:
         try:
-            yuanta = fetch_yuanta_warrant(normalized)
             if yuanta:
                 issuer = "yuanta"
                 apply_yuanta_overrides(info, yuanta)
@@ -1536,11 +1611,6 @@ def load_warrant(code: str, existing: dict[str, Any] | None = None) -> dict[str,
     else:
         broker_quote = None
 
-    try:
-        market_quote = fetch_warrant_market_quote(normalized, info.get("warrantMarket") or "tse")
-    except Exception as error:
-        exchange_error = exchange_error or str(error)
-        market_quote = None
     quote = merge_quote_metadata(market_quote, broker_quote)
     market_reference = market_bid_price(market_quote)
     market_reference_error = ""
@@ -1574,22 +1644,22 @@ def load_warrant(code: str, existing: dict[str, Any] | None = None) -> dict[str,
             info["underlyingName"] = underlying.get("Name") or info.get("underlyingName") or ""
             info["underlyingMarket"] = "tse"
 
-    broker_underlying_quote = underlying_quote_from_kgi(kgi_warrant, kgi_underlying) or underlying_quote_from_yuanta(
+    broker_underlying_quote = underlying_quote_from_kgi(kgi_warrant, None) or underlying_quote_from_yuanta(
         yuanta,
         info.get("underlyingMarket") or info.get("warrantMarket") or "tse",
     )
-    market_underlying_quote = None
-    underlying_error = ""
-    if info.get("underlyingCode"):
+    prefetched_code = str((market_underlying_quote or {}).get("code") or "").strip().upper()
+    expected_code = str(info.get("underlyingCode") or "").strip().upper()
+    if expected_code and prefetched_code != expected_code:
         try:
             market_underlying_quote = fetch_underlying_market_quote(
-                info["underlyingCode"],
+                expected_code,
                 info.get("underlyingMarket") or info.get("warrantMarket") or "tse",
             )
         except Exception as error:
             underlying_error = str(error)
             market_underlying_quote = None
-    else:
+    elif not expected_code:
         underlying_error = f"{UNDERLYING_QUOTE_ERROR_MARK}：缺標的代號"
     underlying_quote = merge_quote_metadata(market_underlying_quote, broker_underlying_quote)
     if not market_underlying_quote or spot_price_from_underlying_quote(market_underlying_quote) is None:
