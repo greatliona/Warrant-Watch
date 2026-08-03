@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import copy
 import html
 import json
 import math
 import os
 import re
 import subprocess
+import threading
 import time
 import uuid
 import xml.etree.ElementTree as ET
@@ -35,13 +37,14 @@ FUGLE_INTRADAY_QUOTE = "https://api.fugle.tw/marketdata/v1.0/stock/intraday/quot
 YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.7i"
+APP_VERSION = "W1.0.7j"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 REALTIME_QUOTE_TTL_SECONDS = 2
 FALLBACK_QUOTE_TTL_SECONDS = 5
 VENDOR_PRICE_TTL_SECONDS = 5
 HTTP_TIMEOUT_SECONDS = 5
 SUPABASE_TIMEOUT_SECONDS = 5
+ORDER_SYNC_DELAY_SECONDS = 7
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
 SUPABASE_TABLE_DEFAULT = "warrant_watch_lists"
@@ -246,10 +249,7 @@ def read_supabase_items() -> list[dict[str, Any]]:
     return items if isinstance(items, list) else []
 
 
-def write_supabase_items(items: list[dict[str, Any]]) -> bool:
-    config = supabase_config()
-    if not config:
-        raise WarrantError("Supabase 尚未設定，無法儲存清單")
+def write_supabase_items_with_config(items: list[dict[str, Any]], config: dict[str, str]) -> bool:
     payload = {
         "profile_id": config["profile_id"],
         "items": [item_without_calculations(item) for item in items],
@@ -264,6 +264,13 @@ def write_supabase_items(items: list[dict[str, Any]]) -> bool:
     )
     response.raise_for_status()
     return True
+
+
+def write_supabase_items(items: list[dict[str, Any]]) -> bool:
+    config = supabase_config()
+    if not config:
+        raise WarrantError("Supabase 尚未設定，無法儲存清單")
+    return write_supabase_items_with_config(items, config)
 
 
 def split_book(value: Any) -> list[float]:
@@ -2252,9 +2259,52 @@ def detail_html(item: dict[str, Any]) -> str:
     )
 
 
-def persist_current_items() -> None:
-    write_cloud_items(st.session_state["items"])
+def cancel_pending_order_sync() -> None:
+    timer = st.session_state.pop("_order_sync_timer", None)
+    if isinstance(timer, threading.Timer):
+        timer.cancel()
+    cancel_event = st.session_state.pop("_order_sync_cancel_event", None)
+    if isinstance(cancel_event, threading.Event):
+        cancel_event.set()
     st.session_state["_pending_order_sync"] = False
+
+
+def run_delayed_order_sync(
+    items: list[dict[str, Any]],
+    config: dict[str, str],
+    cancel_event: threading.Event,
+) -> None:
+    if cancel_event.is_set():
+        return
+    try:
+        if cancel_event.is_set():
+            return
+        write_supabase_items_with_config(items, config)
+    except Exception:
+        return
+
+
+def schedule_order_sync() -> None:
+    cancel_pending_order_sync()
+    config = supabase_config()
+    if not config:
+        raise WarrantError("Supabase 尚未設定，無法儲存排序")
+    cancel_event = threading.Event()
+    timer = threading.Timer(
+        ORDER_SYNC_DELAY_SECONDS,
+        run_delayed_order_sync,
+        args=(copy.deepcopy(st.session_state["items"]), dict(config), cancel_event),
+    )
+    timer.daemon = True
+    st.session_state["_order_sync_timer"] = timer
+    st.session_state["_order_sync_cancel_event"] = cancel_event
+    st.session_state["_pending_order_sync"] = True
+    timer.start()
+
+
+def persist_current_items() -> None:
+    cancel_pending_order_sync()
+    write_cloud_items(st.session_state["items"])
 
 
 def clear_realtime_caches() -> None:
@@ -2430,7 +2480,7 @@ def move_item(index: int, direction: int) -> None:
         return
     item = st.session_state["items"].pop(index)
     st.session_state["items"].insert(next_index, item)
-    st.session_state["_pending_order_sync"] = True
+    schedule_order_sync()
     st.rerun()
 
 
