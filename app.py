@@ -37,7 +37,7 @@ FUGLE_INTRADAY_QUOTE = "https://api.fugle.tw/marketdata/v1.0/stock/intraday/quot
 YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.7j"
+APP_VERSION = "W1.0.7k"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 REALTIME_QUOTE_TTL_SECONDS = 2
 FALLBACK_QUOTE_TTL_SECONDS = 5
@@ -45,6 +45,7 @@ VENDOR_PRICE_TTL_SECONDS = 5
 HTTP_TIMEOUT_SECONDS = 5
 SUPABASE_TIMEOUT_SECONDS = 5
 ORDER_SYNC_DELAY_SECONDS = 7
+ADD_SYNC_DELAY_SECONDS = 0.5
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
 SUPABASE_TABLE_DEFAULT = "warrant_watch_lists"
@@ -748,6 +749,41 @@ def info_from_quote(code: str, quote: dict[str, Any]) -> dict[str, Any]:
         "exerciseEndDate": "",
         "sourceDate": "",
     }
+
+
+def empty_warrant_info(code: str) -> dict[str, Any]:
+    return {
+        "code": code,
+        "name": "",
+        "warrantType": "call",
+        "underlyingName": "",
+        "underlyingCode": "",
+        "underlyingMarket": "tse",
+        "warrantMarket": "tse",
+        "strike": None,
+        "ratio": None,
+        "lastTradingDate": "",
+        "exerciseEndDate": "",
+    }
+
+
+def warrant_info_complete(info: dict[str, Any]) -> bool:
+    return bool(
+        info.get("name")
+        and info.get("underlyingCode")
+        and to_number(info.get("strike")) is not None
+        and to_number(info.get("ratio")) is not None
+        and (info.get("exerciseEndDate") or info.get("lastTradingDate"))
+    )
+
+
+def fill_missing_warrant_info(info: dict[str, Any], fallback: dict[str, Any] | None) -> dict[str, Any]:
+    if not fallback:
+        return info
+    for key, value in fallback.items():
+        if info.get(key) in {None, ""} and value not in {None, ""}:
+            info[key] = value
+    return info
 
 
 def apply_yuanta_overrides(info: dict[str, Any], yuanta: dict[str, Any] | None) -> None:
@@ -1508,108 +1544,98 @@ def load_warrant(code: str, existing: dict[str, Any] | None = None) -> dict[str,
         raise WarrantError("請輸入權證代號，不是股票代號；例如 068562")
 
     exchange_error = ""
-    market_quote = None
+    yuanta_error = ""
+    kgi_error = ""
+    market_quote: dict[str, Any] | None = None
+    yuanta: dict[str, Any] | None = None
+    kgi_warrant: dict[str, Any] | None = None
     existing_info = info_from_existing_item(normalized, existing)
     if existing_info:
         info = existing_info
-        try:
-            market_quote = fetch_warrant_market_quote(normalized, info.get("warrantMarket") or "tse")
-        except Exception as error:
-            exchange_error = str(error)
-    else:
+        issuer = warrant_issuer({"issuer": (existing or {}).get("issuer"), "name": info.get("name")})
         with ThreadPoolExecutor(max_workers=2) as executor:
-            info_future = executor.submit(find_warrant_info, normalized)
-            market_future = executor.submit(fetch_warrant_market_quote, normalized, "tse")
-            try:
-                exchange_info = info_future.result()
-            except Exception as error:
-                exchange_error = str(error)
-                exchange_info = None
+            market_future = executor.submit(
+                fetch_warrant_market_quote,
+                normalized,
+                info.get("warrantMarket") or "tse",
+            )
+            broker_future = None
+            if issuer == "yuanta":
+                broker_future = executor.submit(fetch_yuanta_warrant, normalized)
+            elif issuer == "kgi":
+                broker_future = executor.submit(fetch_kgi_warrant, normalized)
             try:
                 market_quote = market_future.result()
             except Exception as error:
-                exchange_error = exchange_error or str(error)
-                market_quote = None
-        info = exchange_info or {
-            "code": normalized,
-            "name": "",
-            "warrantType": "call",
-            "underlyingName": "",
-            "underlyingCode": "",
-            "underlyingMarket": "tse",
-            "warrantMarket": "tse",
-            "strike": None,
-            "ratio": None,
-            "lastTradingDate": "",
-            "exerciseEndDate": "",
-        }
-    yuanta: dict[str, Any] | None = None
-    kgi_warrant: dict[str, Any] | None = None
-    yuanta_error = ""
-    kgi_error = ""
-    broker_quote = None
-    quote = None
-    market_underlying_quote = None
-    underlying_error = ""
-
-    issuer = warrant_issuer(
-        {
-            "issuer": (existing or {}).get("issuer"),
-            "name": info.get("name") or (market_quote or {}).get("name") or (market_quote or {}).get("fullName"),
-        }
-    )
-    broker_workers = 1 + int(bool(info.get("underlyingCode"))) + int(not issuer)
-    with ThreadPoolExecutor(max_workers=broker_workers) as executor:
-        kgi_future = executor.submit(fetch_kgi_warrant, normalized) if issuer in {"", "kgi"} else None
-        yuanta_future = executor.submit(fetch_yuanta_warrant, normalized) if issuer in {"", "yuanta"} else None
-        spot_future = None
-        if info.get("underlyingCode"):
-            spot_future = executor.submit(
-                fetch_underlying_market_quote,
-                info["underlyingCode"],
-                info.get("underlyingMarket") or info.get("warrantMarket") or "tse",
-            )
-
-        if kgi_future:
+                exchange_error = str(error)
+            if broker_future:
+                try:
+                    broker_result = broker_future.result()
+                    if issuer == "yuanta":
+                        yuanta = broker_result
+                    else:
+                        kgi_warrant = broker_result
+                except Exception as error:
+                    if issuer == "yuanta":
+                        yuanta_error = str(error)
+                    else:
+                        kgi_error = str(error)
+    else:
+        info = empty_warrant_info(normalized)
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            market_future = executor.submit(fetch_warrant_market_quote, normalized, "tse")
+            yuanta_future = executor.submit(fetch_yuanta_warrant, normalized)
             try:
-                kgi_warrant = kgi_future.result()
+                market_quote = market_future.result()
             except Exception as error:
-                kgi_error = str(error)
-                kgi_warrant = None
-        if yuanta_future:
+                exchange_error = str(error)
+                market_quote = None
             try:
                 yuanta = yuanta_future.result()
             except Exception as error:
                 yuanta_error = str(error)
                 yuanta = None
-        if spot_future:
+
+        if market_quote:
+            info = info_from_quote(normalized, market_quote)
+        issuer = "yuanta" if yuanta else warrant_issuer({"name": info.get("name")})
+        if issuer == "kgi" or not issuer:
             try:
-                market_underlying_quote = spot_future.result()
+                kgi_warrant = fetch_kgi_warrant(normalized)
+                if kgi_warrant:
+                    issuer = "kgi"
             except Exception as error:
-                underlying_error = str(error)
-                market_underlying_quote = None
+                kgi_error = str(error)
+                kgi_warrant = None
 
-    if issuer == "kgi" or (not issuer and kgi_warrant):
-        try:
-            if kgi_warrant:
-                issuer = "kgi"
-                apply_kgi_overrides(info, kgi_warrant)
-            elif issuer == "kgi":
-                kgi_error = "凱基資料讀不到這檔權證"
-        except Exception as error:
-            kgi_error = str(error)
-            kgi_warrant = None
+    issuer = warrant_issuer(
+        {
+            "issuer": (existing or {}).get("issuer") or issuer,
+            "name": info.get("name") or (market_quote or {}).get("name") or (market_quote or {}).get("fullName"),
+        }
+    )
+    if yuanta:
+        issuer = "yuanta"
+        apply_yuanta_overrides(info, yuanta)
+    elif kgi_warrant:
+        issuer = "kgi"
+        apply_kgi_overrides(info, kgi_warrant)
 
-    if issuer == "yuanta" or not issuer:
+    if not existing_info and not warrant_info_complete(info):
         try:
-            if yuanta:
-                issuer = "yuanta"
-                apply_yuanta_overrides(info, yuanta)
-            elif issuer == "yuanta":
-                yuanta_error = "元大資料讀不到這檔權證"
+            fill_missing_warrant_info(info, find_warrant_info(normalized))
         except Exception as error:
-            yuanta_error = str(error)
-            yuanta = None
+            exchange_error = exchange_error or str(error)
+
+    broker_quote = None
+    quote = None
+    market_underlying_quote = None
+    underlying_error = ""
+
+    if issuer == "yuanta" and not yuanta:
+        yuanta_error = yuanta_error or "元大資料讀不到這檔權證"
+    elif issuer == "kgi" and not kgi_warrant:
+        kgi_error = kgi_error or "凱基資料讀不到這檔權證"
 
     if issuer == "yuanta":
         broker_quote = quote_from_yuanta(yuanta, normalized, info.get("warrantMarket") or "tse")
@@ -2269,31 +2295,40 @@ def cancel_pending_order_sync() -> None:
     st.session_state["_pending_order_sync"] = False
 
 
+def session_cloud_sync_lock() -> threading.Lock:
+    lock = st.session_state.get("_cloud_sync_lock")
+    if lock is None:
+        lock = threading.Lock()
+        st.session_state["_cloud_sync_lock"] = lock
+    return lock
+
+
 def run_delayed_order_sync(
     items: list[dict[str, Any]],
     config: dict[str, str],
     cancel_event: threading.Event,
+    sync_lock: threading.Lock,
 ) -> None:
-    if cancel_event.is_set():
-        return
-    try:
+    with sync_lock:
         if cancel_event.is_set():
             return
-        write_supabase_items_with_config(items, config)
-    except Exception:
-        return
+        try:
+            write_supabase_items_with_config(items, config)
+        except Exception:
+            return
 
 
-def schedule_order_sync() -> None:
+def schedule_items_sync(delay_seconds: float) -> None:
     cancel_pending_order_sync()
     config = supabase_config()
     if not config:
-        raise WarrantError("Supabase 尚未設定，無法儲存排序")
+        raise WarrantError("Supabase 尚未設定，無法儲存清單")
     cancel_event = threading.Event()
+    sync_lock = session_cloud_sync_lock()
     timer = threading.Timer(
-        ORDER_SYNC_DELAY_SECONDS,
+        delay_seconds,
         run_delayed_order_sync,
-        args=(copy.deepcopy(st.session_state["items"]), dict(config), cancel_event),
+        args=(copy.deepcopy(st.session_state["items"]), dict(config), cancel_event, sync_lock),
     )
     timer.daemon = True
     st.session_state["_order_sync_timer"] = timer
@@ -2302,9 +2337,14 @@ def schedule_order_sync() -> None:
     timer.start()
 
 
+def schedule_order_sync() -> None:
+    schedule_items_sync(ORDER_SYNC_DELAY_SECONDS)
+
+
 def persist_current_items() -> None:
     cancel_pending_order_sync()
-    write_cloud_items(st.session_state["items"])
+    with session_cloud_sync_lock():
+        write_cloud_items(st.session_state["items"])
 
 
 def clear_realtime_caches() -> None:
@@ -2433,9 +2473,8 @@ def add_or_update_warrant(code: str) -> None:
         st.session_state["items"].append(item)
     sync_shared_underlying_from_item(st.session_state["items"], item)
     clear_calculation_inputs()
-    with st.spinner("正在儲存清單..."):
-        persist_current_items()
-    st.toast(f"{item['code']} 已儲存")
+    schedule_items_sync(ADD_SYNC_DELAY_SECONDS)
+    st.toast(f"{item['code']} 已加入")
 
 
 def refresh_all_prices() -> int:
