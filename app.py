@@ -37,7 +37,7 @@ FUGLE_INTRADAY_QUOTE = "https://api.fugle.tw/marketdata/v1.0/stock/intraday/quot
 YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.7l"
+APP_VERSION = "W1.0.7m"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 REALTIME_QUOTE_TTL_SECONDS = 2
 FALLBACK_QUOTE_TTL_SECONDS = 5
@@ -446,7 +446,10 @@ def fetch_yuanta_warrant(code: str) -> dict[str, Any] | None:
     response.raise_for_status()
     data = response_json(response, "元大權證資料")
     result = data.get("result") or []
-    return result[0] if result else None
+    row = result[0] if result else None
+    if row and str(row.get("FLD_ISSUE_AGT_ID") or "") != "980":
+        return None
+    return row
 
 
 @st.cache_data(ttl=VENDOR_PRICE_TTL_SECONDS, show_spinner=False)
@@ -516,47 +519,52 @@ def clear_kgi_connection_failure() -> None:
 
 @st.cache_data(ttl=VENDOR_PRICE_TTL_SECONDS, show_spinner=False)
 def fetch_kgi_service(service_id: str, params: dict[str, Any]) -> Any:
-    blocked_message = kgi_circuit_message()
-    if blocked_message:
-        raise WarrantError(blocked_message)
-    payload = dict(params)
-    payload["LocationPathName"] = "/EDWebSite/Views/WarrantCalculator/WarrantCalculatorIframe.aspx"
+    endpoints = {
+        "S0600013_NormalWarrantList": "WarrantUtility/KGINormalWarrantList",
+        "S0600013_GetWarrant": "WarrantUtility/GetWarrant",
+        "S0600017_GetUnderlyingByWarrant": "WarrantUtility/GetUnderlying",
+        "S0600018_GetTheoreticalPrice": "WarrantCalculator/TheoreticalPrice",
+    }
+    blocked = kgi_circuit_message()
+    if blocked:
+        raise WarrantError(blocked)
+    base = "https://warrant.kgi.com.tw/WarrantWeb/"
     try:
+        token = fetch_kgi_public_token()
         response = requests.post(
-            KGI_SERVICE,
-            headers={
-                **HEADERS,
-                "Origin": "https://warrant.kgi.com",
-                "Referer": "https://warrant.kgi.com/EDWebSite/Views/WarrantCalculator/WarrantCalculatorIframe.aspx",
-            },
-            data={
-                "serviceId": service_id,
-                "parametersOfJson": json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
-            },
+            base + endpoints[service_id], json=params,
+            headers={**HEADERS, "Authorization": "Bearer " + token},
             timeout=HTTP_TIMEOUT_SECONDS,
-            verify=VENDOR_SSL_VERIFY,
         )
+        if response.status_code == 401:
+            fetch_kgi_public_token.clear()
+            token = fetch_kgi_public_token()
+            response = requests.post(
+                base + endpoints[service_id], json=params,
+                headers={**HEADERS, "Authorization": "Bearer " + token},
+                timeout=HTTP_TIMEOUT_SECONDS,
+            )
         response.raise_for_status()
+        data = response_json(response, "凱基")
     except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as error:
         raise WarrantError(mark_kgi_connection_failure(error)) from error
-    except requests.exceptions.RequestException as error:
-        raise WarrantError("凱基試算服務回傳錯誤") from error
+    if not data.get("Result") or data.get("HasException"):
+        raise WarrantError("凱基試算服務回傳錯誤")
     clear_kgi_connection_failure()
-    try:
-        root = ET.fromstring(response.text)
-    except ET.ParseError as error:
-        raise WarrantError("凱基試算服務回傳格式異常") from error
-    namespace = {"kgi": "http://tempuri.org/"}
-    result = root.find("kgi:Result", namespace)
-    if result is not None and str(result.text).lower() != "true":
-        return None
-    value = root.find("kgi:ValueOfJson", namespace)
-    if value is None or not value.text:
-        return None
-    try:
-        return json.loads(value.text)
-    except json.JSONDecodeError as error:
-        raise WarrantError("凱基試算服務回傳格式異常") from error
+    return data.get("Value")
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_kgi_public_token() -> str:
+    response = requests.post(
+        "https://warrant.kgi.com.tw/WarrantWeb/Authorization/GetToken",
+        json="", headers=HEADERS, timeout=HTTP_TIMEOUT_SECONDS,
+    )
+    response.raise_for_status()
+    data = response_json(response, "凱基")
+    if not data.get("Result") or not data.get("Message"):
+        raise WarrantError("凱基連線初始化失敗")
+    return str(data["Message"])
 
 
 @st.cache_data(ttl=BASIC_DATA_TTL_SECONDS, show_spinner=False)
