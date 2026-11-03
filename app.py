@@ -37,7 +37,7 @@ FUGLE_INTRADAY_QUOTE = "https://api.fugle.tw/marketdata/v1.0/stock/intraday/quot
 YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 warrant-watch streamlit app"}
-APP_VERSION = "W1.0.7k"
+APP_VERSION = "W1.0.7l"
 BASIC_DATA_TTL_SECONDS = 60 * 60 * 12
 REALTIME_QUOTE_TTL_SECONDS = 2
 FALLBACK_QUOTE_TTL_SECONDS = 5
@@ -46,6 +46,7 @@ HTTP_TIMEOUT_SECONDS = 5
 SUPABASE_TIMEOUT_SECONDS = 5
 ORDER_SYNC_DELAY_SECONDS = 7
 ADD_SYNC_DELAY_SECONDS = 0.5
+KGI_RETRY_COOLDOWN_SECONDS = 60
 CALCULATION_STATE_VERSION = "clear-calculation-inputs-v2"
 CALCULATION_FIELDS = ("testSpot", "targetPrice", "simulatedPrice", "impliedSpot")
 SUPABASE_TABLE_DEFAULT = "warrant_watch_lists"
@@ -55,6 +56,9 @@ VENDOR_SSL_VERIFY = False
 VOLATILITY_ALERT_POINTS = 1.0
 WARRANT_MARKET_BID_ERROR_MARK = "權證市場第一檔委買價抓取失敗"
 UNDERLYING_QUOTE_ERROR_MARK = "標的即時/準即時股價抓取失敗"
+KGI_DNS_ERROR_MESSAGE = "凱基試算服務暫時無法連線（凱基網域解析失敗）"
+KGI_CONNECTION_ERROR_MESSAGE = "凱基試算服務暫時無法連線"
+KGI_TIMEOUT_ERROR_MESSAGE = "凱基試算服務回應逾時"
 MARKET_QUOTE_FIELDS = {
     "last",
     "recent",
@@ -458,26 +462,90 @@ def fetch_yuanta_quote_price(params: dict[str, str]) -> float | None:
     return to_number((calc or {}).get("PriceTheory"))
 
 
+@st.cache_resource
+def kgi_connection_state() -> dict[str, Any]:
+    return {
+        "lock": threading.Lock(),
+        "blockedUntil": 0.0,
+        "message": KGI_CONNECTION_ERROR_MESSAGE,
+    }
+
+
+def kgi_connection_error_message(error: Exception) -> str:
+    text = str(error).lower()
+    if any(
+        marker in text
+        for marker in (
+            "nameresolutionerror",
+            "name resolution",
+            "failed to resolve",
+            "nodename nor servname",
+            "name or service not known",
+            "temporary failure in name resolution",
+        )
+    ):
+        return KGI_DNS_ERROR_MESSAGE
+    if isinstance(error, requests.exceptions.Timeout):
+        return KGI_TIMEOUT_ERROR_MESSAGE
+    return KGI_CONNECTION_ERROR_MESSAGE
+
+
+def kgi_circuit_message() -> str:
+    state = kgi_connection_state()
+    with state["lock"]:
+        if time.monotonic() < float(state.get("blockedUntil") or 0):
+            return str(state.get("message") or KGI_CONNECTION_ERROR_MESSAGE)
+    return ""
+
+
+def mark_kgi_connection_failure(error: Exception) -> str:
+    message = kgi_connection_error_message(error)
+    state = kgi_connection_state()
+    with state["lock"]:
+        state["blockedUntil"] = time.monotonic() + KGI_RETRY_COOLDOWN_SECONDS
+        state["message"] = message
+    return message
+
+
+def clear_kgi_connection_failure() -> None:
+    state = kgi_connection_state()
+    with state["lock"]:
+        state["blockedUntil"] = 0.0
+        state["message"] = KGI_CONNECTION_ERROR_MESSAGE
+
+
 @st.cache_data(ttl=VENDOR_PRICE_TTL_SECONDS, show_spinner=False)
 def fetch_kgi_service(service_id: str, params: dict[str, Any]) -> Any:
+    blocked_message = kgi_circuit_message()
+    if blocked_message:
+        raise WarrantError(blocked_message)
     payload = dict(params)
     payload["LocationPathName"] = "/EDWebSite/Views/WarrantCalculator/WarrantCalculatorIframe.aspx"
-    response = requests.post(
-        KGI_SERVICE,
-        headers={
-            **HEADERS,
-            "Origin": "https://warrant.kgi.com",
-            "Referer": "https://warrant.kgi.com/EDWebSite/Views/WarrantCalculator/WarrantCalculatorIframe.aspx",
-        },
-        data={
-            "serviceId": service_id,
-            "parametersOfJson": json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
-        },
-        timeout=HTTP_TIMEOUT_SECONDS,
-        verify=VENDOR_SSL_VERIFY,
-    )
-    response.raise_for_status()
-    root = ET.fromstring(response.text)
+    try:
+        response = requests.post(
+            KGI_SERVICE,
+            headers={
+                **HEADERS,
+                "Origin": "https://warrant.kgi.com",
+                "Referer": "https://warrant.kgi.com/EDWebSite/Views/WarrantCalculator/WarrantCalculatorIframe.aspx",
+            },
+            data={
+                "serviceId": service_id,
+                "parametersOfJson": json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+            },
+            timeout=HTTP_TIMEOUT_SECONDS,
+            verify=VENDOR_SSL_VERIFY,
+        )
+        response.raise_for_status()
+    except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as error:
+        raise WarrantError(mark_kgi_connection_failure(error)) from error
+    except requests.exceptions.RequestException as error:
+        raise WarrantError("凱基試算服務回傳錯誤") from error
+    clear_kgi_connection_failure()
+    try:
+        root = ET.fromstring(response.text)
+    except ET.ParseError as error:
+        raise WarrantError("凱基試算服務回傳格式異常") from error
     namespace = {"kgi": "http://tempuri.org/"}
     result = root.find("kgi:Result", namespace)
     if result is not None and str(result.text).lower() != "true":
@@ -485,7 +553,10 @@ def fetch_kgi_service(service_id: str, params: dict[str, Any]) -> Any:
     value = root.find("kgi:ValueOfJson", namespace)
     if value is None or not value.text:
         return None
-    return json.loads(value.text)
+    try:
+        return json.loads(value.text)
+    except json.JSONDecodeError as error:
+        raise WarrantError("凱基試算服務回傳格式異常") from error
 
 
 @st.cache_data(ttl=BASIC_DATA_TTL_SECONDS, show_spinner=False)
